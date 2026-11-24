@@ -753,7 +753,7 @@ for (const [k, label] of ADMIN_CATS) {
   $("admin-cat").appendChild(o);
 }
 const defaultList = k => (k.startsWith("idiom") ? IDIOMS[k.slice(5)] : WORDS[Number(k.slice(3))]);
-const toText = list => list.map(x => `${x.w} : ${x.m}`).join("\n");
+const toText = list => list.map(x => `${x.w}${x.h ? `(${x.h})` : ""} : ${x.m}`).join("\n");
 
 function loadAdminCat() {
   const k = $("admin-cat").value;

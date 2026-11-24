@@ -294,7 +294,7 @@ export function playIdiom(ctx) {
       const others = pz.chars.filter(c => !need.includes(c));
       return shuffleR(need.concat(shuffleR(others).slice(0, extra)));
     },
-    summary: entries => entries.map(e => `${e.word} — ${e.meaning}`),
+    summary: entries => entries.map(e => `${e.word}${pz.hanja[e.word] ? ` (${pz.hanja[e.word]})` : ""} — ${e.meaning}`),
     limitMs: IDIOM_LIMIT_MS[ctx.level] ?? IDIOM_LIMIT_MS.mid
   });
 }
