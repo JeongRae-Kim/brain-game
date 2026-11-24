@@ -7,9 +7,22 @@ export const WORDLE_COUNT = 3;
 export const WORDLE_TRIES = 6;
 export const WORDLE_FAIL_MS = 60000;
 
-function bank(level, custom) {
-  const list = custom?.[level]?.length ? custom[level] : WORDS[level];
-  return list || WORDS[1];
+export const ENG_MIN = 30;   // 남은 단어가 이보다 적으면 '이미 나온 단어'를 다시 씀
+
+export function engList(level, custom) {
+  const c = custom?.["eng" + level];
+  return c && c.length >= 10 ? c : (WORDS[level] || WORDS[1]);
+}
+
+// 이미 나온 단어를 빼되, 너무 적게 남으면 전체 목록 사용
+export function usable(list, exclude, min) {
+  if (!exclude || !exclude.size) return list;
+  const f = list.filter(x => !exclude.has(x.w));
+  return f.length >= min ? f : list;
+}
+
+function bank(level, opts) {
+  return usable(engList(level, opts?.custom), opts?.exclude, ENG_MIN);
 }
 
 function pick(list, n, rand, filter) {
@@ -21,10 +34,10 @@ function pick(list, n, rand, filter) {
 // ---------- 알파벳 맞추기 ----------
 const ANAGRAM_LEN = l => (l <= 3 ? [4, 6] : l <= 6 ? [5, 8] : [6, 10]);
 
-export function makeAnagram(seed, level, custom) {
+export function makeAnagram(seed, level, opts) {
   const rand = rng(seed);
   const [lo, hi] = ANAGRAM_LEN(level);
-  return pick(bank(level, custom), ANAGRAM_COUNT, rand, x => x.w.length >= lo && x.w.length <= hi)
+  return pick(bank(level, opts), ANAGRAM_COUNT, rand, x => x.w.length >= lo && x.w.length <= hi)
     .map(x => {
       let letters = shuffle(x.w.split(""), rand);
       for (let k = 0; k < 5 && letters.join("") === x.w; k++) letters = shuffle(letters, rand);
@@ -35,10 +48,10 @@ export function makeAnagram(seed, level, custom) {
 // ---------- 워들 ----------
 const WORDLE_LEN = l => (l <= 3 ? [5, 5] : l <= 6 ? [5, 6] : [6, 7]);
 
-export function makeWordle(seed, level, custom) {
+export function makeWordle(seed, level, opts) {
   const rand = rng(seed);
   const [lo, hi] = WORDLE_LEN(level);
-  return pick(bank(level, custom), WORDLE_COUNT, rand, x => x.w.length >= lo && x.w.length <= hi)
+  return pick(bank(level, opts), WORDLE_COUNT, rand, x => x.w.length >= lo && x.w.length <= hi)
     .map(x => ({ word: x.w, meaning: x.m }));
 }
 
@@ -127,10 +140,13 @@ function tryBuild(words, n, target, rand) {
   return placed;
 }
 
-export function makeCrossword(seed, level, custom) {
-  const rand = rng(seed);
+export function makeCrossword(seed, level, opts) {
   const { n, target } = CROSS_SIZE(level);
-  const words = bank(level, custom);
+  return buildCrossword(seed, bank(level, opts), n, target);
+}
+
+export function buildCrossword(seed, words, n, target) {
+  const rand = rng(seed);
   let best = null;
   for (let k = 0; k < 25; k++) {
     const p = tryBuild(words, n, target, rand);

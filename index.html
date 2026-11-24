@@ -49,6 +49,7 @@
         <button class="btn choice" data-game="cross">🔤 영어 크로스워드<small>뜻 보고 가로세로 채우기</small></button>
         <button class="btn choice" data-game="anagram">🔠 알파벳 맞추기<small>섞인 철자 바로잡기</small></button>
         <button class="btn choice" data-game="wordle">🟩 영어 워들<small>6번 안에 단어 추리</small></button>
+        <button class="btn choice" data-game="idiom">📜 사자성어 크로스워드<small>뜻 보고 글자판으로 채우기</small></button>
       </div>
       <div id="level-row" class="level-row" hidden>
         <div class="level-line">
@@ -63,6 +64,13 @@
           <button class="btn seg-btn" data-sl="easy">초급</button>
           <button class="btn seg-btn" data-sl="mid">중급</button>
           <button class="btn seg-btn" data-sl="hard">고급</button>
+        </div>
+      </div>
+      <div id="idiom-row" class="level-row" hidden>
+        <div class="seg">
+          <button class="btn seg-btn" data-il="easy">초급</button>
+          <button class="btn seg-btn" data-il="mid">중급</button>
+          <button class="btn seg-btn" data-il="hard">고급</button>
         </div>
       </div>
       <div id="eng-row" class="level-row" hidden>
@@ -95,6 +103,7 @@
       <button id="share-btn" class="btn">🔗 링크 공유</button>
       <button id="rename-btn" class="btn">✏️ 이름 바꾸기</button>
     </div>
+    <button id="admin-btn" class="btn link-btn">⚙️ 단어 관리</button>
   </section>
 
   <!-- 카운트다운 -->
@@ -112,6 +121,7 @@
     <p id="game-prompt" class="prompt"></p>
     <div id="game-grid" class="grid"></div>
     <div id="game-controls"></div>
+    <button id="quit-btn" class="btn quit">🏳️ 포기하기</button>
   </section>
 
   <!-- 결과 -->
@@ -121,7 +131,32 @@
       <h2>실시간 순위</h2>
       <ol id="result-board" class="board"></ol>
     </div>
+    <div id="my-summary" class="card" hidden>
+      <h2>이번 판의 사자성어</h2>
+      <ul id="summary-list" class="summary"></ul>
+    </div>
     <button id="back-btn" class="btn primary">대기실로</button>
+  </section>
+
+  <!-- 단어 관리 -->
+  <section id="view-admin" class="view" hidden>
+    <div id="admin-login" class="card">
+      <h2>⚙️ 단어 관리</h2>
+      <p class="note">관리 코드를 입력하세요</p>
+      <input id="admin-code" autocomplete="off" placeholder="관리 코드">
+      <button id="admin-login-btn" class="btn primary">확인</button>
+    </div>
+    <div id="admin-panel" class="card" hidden>
+      <h2>⚙️ 단어 관리</h2>
+      <select id="admin-cat"></select>
+      <p id="admin-info" class="note"></p>
+      <textarea id="admin-text" rows="14" spellcheck="false"></textarea>
+      <p class="note">한 줄에 하나씩 「단어 : 뜻」으로 적어요 (10개 이상)</p>
+      <button id="admin-save" class="btn primary">저장</button>
+      <button id="admin-reset" class="btn">기본 목록으로 되돌리기</button>
+      <button id="admin-clear" class="btn">이 방의 '이미 나온 단어' 초기화</button>
+    </div>
+    <button id="admin-back" class="btn">대기실로</button>
   </section>
 </main>
 

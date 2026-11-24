@@ -36,7 +36,8 @@ export const GAMES = {
   sudoku: { title: "🔢 스도쿠", leveled: false },
   cross: { title: "🔤 영어 크로스워드", english: true },
   anagram: { title: "🔠 알파벳 맞추기", english: true },
-  wordle: { title: "🟩 영어 워들", english: true }
+  wordle: { title: "🟩 영어 워들", english: true },
+  idiom: { title: "📜 사자성어 크로스워드" }
 };
 
 export const LEVEL_MIN = 1;
@@ -144,6 +145,7 @@ export function fmtTime(ms) {
 export function rankResults(results) {
   const rows = Object.entries(results || {}).map(([uid, r]) => ({ uid, ...r }));
   const done = rows.filter(r => typeof r.timeMs === "number").sort((a, b) => a.timeMs - b.timeMs);
-  const playing = rows.filter(r => typeof r.timeMs !== "number");
+  const playing = rows.filter(r => typeof r.timeMs !== "number")
+    .sort((a, b) => (a.gaveUp ? 1 : 0) - (b.gaveUp ? 1 : 0));
   return { done, playing };
 }

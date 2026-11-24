@@ -1,5 +1,6 @@
 // 영어 게임 화면: 크로스워드 · 알파벳 맞추기 · 워들
 import { HINT_PENALTY_MS, MAX_HINTS } from "./games.js";
+import { makeIdiomCross } from "./idioms.js";
 import {
   makeCrossword, makeAnagram, makeWordle, scoreGuess,
   WORDLE_TRIES, WORDLE_FAIL_MS
@@ -71,15 +72,19 @@ function hintButton(ctx, state, onUse) {
 }
 
 // =====================================================================
-// 🔤 크로스워드
+// 🔤 크로스워드 (영어 · 사자성어 공용)
+//   mode.puzzle: 미리 만든 판, mode.given: 미리 채운 칸, mode.tiles(entry): 보기 글자판
 // =====================================================================
-export function playCrossword(ctx) {
-  const { rows, cols, sol, entries, numAt } = makeCrossword(ctx.seed, ctx.level, ctx.custom);
-  const vals = sol.map(r => r.map(c => (c ? "" : null)));
+export function playCrossword(ctx, mode = {}) {
+  const pz = mode.puzzle || makeCrossword(ctx.seed, ctx.level, ctx.opts);
+  const { rows, cols, sol, entries, numAt } = pz;
+  const given = mode.given || new Set();
+  const vals = sol.map((row, r) => row.map((ch, c) => (ch ? (given.has(r * cols + c) ? ch : "") : null)));
   const hinted = new Set();
   const state = { hints: 0, done: false };
+  const lock = p => hinted.has(p.r * cols + p.c) || given.has(p.r * cols + p.c);
   let sel = { r: entries[0].r, c: entries[0].c }, down = entries[0].down;
-  let showWrong = false;
+  let showWrong = false, tilesFor = null;
 
   const grid = ctx.grid;
   grid.className = "xword";
@@ -89,7 +94,7 @@ export function playCrossword(ctx) {
   for (let r = 0; r < rows; r++) {
     cells.push([]);
     for (let c = 0; c < cols; c++) {
-      if (!sol[r][c]) { const d = el("div", "blk"); grid.appendChild(d); cells[r].push(null); continue; }
+      if (!sol[r][c]) { grid.appendChild(el("div", "blk")); cells[r].push(null); continue; }
       const b = el("button", "cw");
       const n = numAt.get(r * cols + c);
       if (n) b.appendChild(el("span", "num", n));
@@ -113,7 +118,11 @@ export function playCrossword(ctx) {
     sel = { r, c };
     render();
   }
-  function selectEntry(e) { down = e.down; sel = { r: e.r, c: e.c }; render(); }
+  function selectEntry(e) {
+    down = e.down;
+    sel = cellsOf(e).find(p => !lock(p) && !vals[p.r][p.c]) || { r: e.r, c: e.c };
+    render();
+  }
   function moveWord(d) {
     const i = entries.indexOf(cur());
     selectEntry(entries[(i + d + entries.length) % entries.length]);
@@ -124,15 +133,14 @@ export function playCrossword(ctx) {
     const e = cur();
     const list = cellsOf(e);
     const idx = list.findIndex(p => p.r === sel.r && p.c === sel.c);
-    const lock = p => hinted.has(p.r * cols + p.c);
     if (k === "BACK") {
       if (vals[sel.r][sel.c] && !lock(sel)) vals[sel.r][sel.c] = "";
-      else if (idx > 0) {
-        sel = list[idx - 1];
-        if (!lock(sel)) vals[sel.r][sel.c] = "";
+      else {
+        const pi = [...list.keys()].reverse().find(i => i < idx && !lock(list[i]));
+        if (pi != null) { sel = list[pi]; vals[sel.r][sel.c] = ""; }
       }
     } else if (k.length === 1) {
-      // 힌트 칸에서 같은 글자를 치면 그냥 지나가고, 다른 글자면 다음 칸에 입력
+      // 고정된 칸에서 같은 글자를 치면 그냥 지나가고, 아니면 다음 빈 자리에 입력
       if (lock(sel) && vals[sel.r][sel.c] === k) {
         if (list[idx + 1]) sel = list[idx + 1];
       } else {
@@ -155,13 +163,16 @@ export function playCrossword(ctx) {
       if (!vals[r][c]) full = false;
       if (vals[r][c] !== sol[r][c]) ok = false;
     }
-    if (ok) { state.done = true; render(); setTimeout(() => ctx.finish({ hints: state.hints }), 500); }
-    else if (full) { showWrong = true; render(); ctx.toast("틀린 칸이 빨갛게 표시돼요"); }
+    if (ok) {
+      state.done = true;
+      render();
+      setTimeout(() => ctx.finish({ hints: state.hints }, mode.summary?.(entries)), 500);
+    } else if (full) { showWrong = true; render(); ctx.toast("틀린 칸이 빨갛게 표시돼요"); }
   }
 
-  // 아래 영역: 현재 열쇠 · 키보드 · 도구 · 열쇠 목록
+  // 아래 영역: 현재 열쇠 · 입력 · 도구 · 열쇠 목록
   const clue = el("div", "clue");
-  const kb = keyboard(key);
+  const input = mode.tiles ? el("div", "ktiles") : keyboard(key).wrap;
   const tools = el("div", "tools");
   const prev = el("button", "btn", "◀ 이전");
   prev.addEventListener("click", () => moveWord(-1));
@@ -172,7 +183,6 @@ export function playCrossword(ctx) {
     if (vals[p.r][p.c] === sol[p.r][p.c]) {
       const wrong = cellsOf(cur()).find(q => vals[q.r][q.c] !== sol[q.r][q.c]);
       if (!wrong) {
-        // 지금 단어가 다 맞으면 전체에서 찾기
         outer: for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
           if (sol[r][c] && vals[r][c] !== sol[r][c]) { p = { r, c }; break outer; }
         }
@@ -185,19 +195,33 @@ export function playCrossword(ctx) {
     setTimeout(() => { render(); check(); }, 0);
   });
   tools.append(prev, hint, next);
-  const list = el("div", "clues");
+  const listEl = el("div", "clues");
   const items = [];
   for (const [title, d] of [["가로", false], ["세로", true]]) {
-    list.appendChild(el("h3", null, title));
+    listEl.appendChild(el("h3", null, title));
     for (const e of entries.filter(x => x.down === d)) {
       const it = el("button", "clue-item", `${e.num}. ${e.meaning} (${e.word.length})`);
       it.addEventListener("click", () => { selectEntry(e); window.scrollTo({ top: 0, behavior: "smooth" }); });
       items.push({ it, e });
-      list.appendChild(it);
+      listEl.appendChild(it);
     }
   }
-  ctx.controls.append(clue, kb.wrap, tools, list);
-  physicalKeys(ctx, key);
+  ctx.controls.append(clue, input, tools, listEl);
+  if (!mode.tiles) physicalKeys(ctx, key);
+
+  function drawTiles(e) {
+    if (tilesFor === e) return;
+    tilesFor = e;
+    input.textContent = "";
+    for (const ch of mode.tiles(e)) {
+      const b = el("button", "ktile", ch);
+      b.addEventListener("click", () => key(ch));
+      input.appendChild(b);
+    }
+    const back = el("button", "ktile back", "⌫");
+    back.addEventListener("click", () => key("BACK"));
+    input.appendChild(back);
+  }
 
   function render() {
     const e = cur();
@@ -209,6 +233,7 @@ export function playCrossword(ctx) {
       x.ch.textContent = vals[r][c] || "";
       x.b.classList.toggle("word", inWord.has(k));
       x.b.classList.toggle("sel", sel.r === r && sel.c === c);
+      x.b.classList.toggle("given", given.has(k));
       x.b.classList.toggle("hinted", hinted.has(k));
       x.b.classList.toggle("bad", showWrong && vals[r][c] && vals[r][c] !== sol[r][c]);
       x.b.classList.toggle("ok", state.done);
@@ -218,18 +243,46 @@ export function playCrossword(ctx) {
       it.classList.toggle("active", x === e);
       it.classList.toggle("filled", cellsOf(x).every(p => vals[p.r][p.c]));
     }
+    if (mode.tiles) drawTiles(e);
     const left = vals.flat().filter(v => v === "").length;
     ctx.progress.textContent = `빈칸 ${left}개`;
   }
-  ctx.prompt.textContent = `영어 크로스워드 · ${entries.length}단어`;
+  ctx.prompt.textContent = mode.title || `영어 크로스워드 · ${entries.length}단어`;
   render();
+}
+
+// =====================================================================
+// 📜 사자성어 크로스워드 (보기 글자판으로 입력)
+// =====================================================================
+export function playIdiom(ctx) {
+  const pz = makeIdiomCross(ctx.seed, ctx.level, ctx.opts);
+  const extra = { easy: 2, mid: 4, hard: 6 }[ctx.level] ?? 4;
+  playCrossword(ctx, {
+    puzzle: pz,
+    given: pz.given,
+    title: `사자성어 크로스워드 · ${pz.entries.length}개`,
+    tiles: e => {
+      const need = [...new Set(e.word)];
+      const others = pz.chars.filter(c => !need.includes(c));
+      return shuffleR(need.concat(shuffleR(others).slice(0, extra)));
+    },
+    summary: entries => entries.map(e => `${e.word} — ${e.meaning}`)
+  });
+}
+function shuffleR(a) {
+  const b = a.slice();
+  for (let i = b.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [b[i], b[j]] = [b[j], b[i]];
+  }
+  return b;
 }
 
 // =====================================================================
 // 🔠 알파벳 맞추기
 // =====================================================================
 export function playAnagram(ctx) {
-  const words = makeAnagram(ctx.seed, ctx.level, ctx.custom);
+  const words = makeAnagram(ctx.seed, ctx.level, ctx.opts);
   const state = { hints: 0, done: false };
   let wi = 0, slots, used, locked, busy = false;
 
@@ -332,7 +385,7 @@ export function playAnagram(ctx) {
 // 🟩 워들
 // =====================================================================
 export function playWordle(ctx) {
-  const words = makeWordle(ctx.seed, ctx.level, ctx.custom);
+  const words = makeWordle(ctx.seed, ctx.level, ctx.opts);
   const state = { hints: 0, done: false };
   let wi = 0, guesses, cur, busy = false, fails = 0, showMeaning, revealed;
   const keyColor = {};

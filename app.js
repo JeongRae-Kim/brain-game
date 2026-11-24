@@ -9,8 +9,10 @@ import {
   makeSpeedPuzzle, makeMatchPuzzle, suggestLevel, fmtTime, rankResults
 } from "./games.js";
 import { makeSudoku, SUDOKU_LEVELS, PEERS, ROW, COL } from "./sudoku.js";
-import { playCrossword, playAnagram, playWordle } from "./ui-english.js";
-import { LEVEL_NAMES } from "./words.js";
+import { playCrossword, playAnagram, playWordle, playIdiom } from "./ui-english.js";
+import { LEVEL_NAMES, WORDS } from "./words.js";
+import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
+import { IDIOMS, IDIOM_LEVELS, IDIOM_MIN, idiomList, parseIdioms, makeIdiomCross } from "./idioms.js";
 
 // ---------- 기본 ----------
 const params = new URLSearchParams(location.search);
@@ -46,6 +48,11 @@ let selectedGame = null;
 let levelOverride = {};       // 방장이 직접 바꾼 단계 (다음 시작에만 적용)
 let sudokuLevel = "easy";
 let englishLevel = Number(store.get("bg-eng") || 1);
+let idiomLevel = store.get("bg-idiom") || "easy";
+let customRaw = {};           // 관리 화면에서 바꾼 단어 목록 (원문)
+let custom = {};              // 위 목록을 읽어 둔 것
+let usedWords = {};           // 이 방에서 이미 나온 단어
+let handoverTo = null;
 let keyHandler = null;        // 실제 키보드 입력 (PC)
 document.addEventListener("keydown", e => { if (keyHandler) keyHandler(e); });
 let activeRoundId = null;     // 내가 참여 중이거나 참여한 판
@@ -107,11 +114,15 @@ function join() {
 
   onValue(ref(db, `${base}/players`), s => { players = s.val() || {}; renderLobby(); });
   onValue(ref(db, `${base}/host`), s => {
+    const was = hostUid;
     hostUid = s.val();
     if (!hostUid) claimHost(true);
+    else if (hostUid === uid && was !== uid) onDisconnect(ref(db, `rooms/${ROOM}/host`)).remove().catch(() => {});
     renderLobby();
   });
   onValue(ref(db, `${base}/round`), s => { round = s.val(); onRound(); });
+  onValue(ref(db, `${base}/used`), s => { usedWords = s.val() || {}; });
+  onValue(ref(db, "custom"), s => { customRaw = s.val() || {}; custom = parseCustom(customRaw); });
 
   show("view-lobby");
 }
@@ -131,6 +142,21 @@ async function claimHost(silent) {
 }
 $("claim-host-btn").addEventListener("click", () => claimHost(false));
 
+async function handover(id) {
+  if (handoverTo !== id) {
+    handoverTo = id;
+    renderLobby();
+    setTimeout(() => { if (handoverTo === id) { handoverTo = null; renderLobby(); } }, 4000);
+    return;
+  }
+  handoverTo = null;
+  try {
+    await onDisconnect(ref(db, `rooms/${ROOM}/host`)).cancel();
+    await set(ref(db, `rooms/${ROOM}/host`), id);
+    toast(`${players[id]?.name || "손님"}님이 방장이 됐어요`);
+  } catch { toast("방장을 넘기지 못했어요"); }
+}
+
 // ---------- 대기실 화면 ----------
 function renderLobby() {
   const list = $("player-list");
@@ -141,6 +167,11 @@ function renderLobby() {
     const li = document.createElement("li");
     li.textContent = (id === hostUid ? "👑 " : "") + (p.name || "손님") + (id === uid ? " (나)" : "");
     if (id === uid) li.className = "me";
+    if (hostUid === uid && id !== uid) {
+      li.classList.add("tappable");
+      if (handoverTo === id) { li.classList.add("pick"); li.textContent += " · 한 번 더 누르면 방장 넘김"; }
+      li.addEventListener("click", () => handover(id));
+    }
     list.appendChild(li);
   }
   const iAmHost = hostUid === uid;
@@ -175,6 +206,8 @@ function renderLevelPanel() {
   $("level-row").hidden = !leveled;
   $("sudoku-row").hidden = selectedGame !== "sudoku";
   $("eng-row").hidden = !(selectedGame && GAMES[selectedGame].english);
+  $("idiom-row").hidden = selectedGame !== "idiom";
+  for (const b of document.querySelectorAll("[data-il]")) b.classList.toggle("selected", b.dataset.il === idiomLevel);
   for (const b of document.querySelectorAll("[data-el]")) b.classList.toggle("selected", Number(b.dataset.el) === englishLevel);
   if (leveled) {
     const p = plannedLevel(selectedGame);
@@ -198,6 +231,9 @@ $("level-up").addEventListener("click", () => bumpLevel(1));
 for (const b of document.querySelectorAll("[data-el]")) {
   b.addEventListener("click", () => { englishLevel = Number(b.dataset.el); store.set("bg-eng", englishLevel); renderLevelPanel(); });
 }
+for (const b of document.querySelectorAll("[data-il]")) {
+  b.addEventListener("click", () => { idiomLevel = b.dataset.il; store.set("bg-idiom", idiomLevel); renderLevelPanel(); });
+}
 for (const b of document.querySelectorAll("[data-sl]")) {
   b.addEventListener("click", () => { sudokuLevel = b.dataset.sl; renderLevelPanel(); });
 }
@@ -205,6 +241,7 @@ for (const b of document.querySelectorAll("[data-sl]")) {
 function levelText(r) {
   if (r.game === "sudoku") return SUDOKU_LEVELS[r.level]?.label || "";
   if (GAMES[r.game]?.english) return `${r.level}등급(${LEVEL_NAMES[r.level] || ""})`;
+  if (r.game === "idiom") return IDIOM_LEVELS[r.level]?.label || "";
   return r.level ? `${r.level}단계` : "";
 }
 
@@ -218,20 +255,38 @@ $("start-btn").addEventListener("click", async () => {
     levels[selectedGame] = level;
   } else if (GAMES[selectedGame].english) {
     level = englishLevel;
+  } else if (selectedGame === "idiom") {
+    level = idiomLevel;
   } else {
     level = sudokuLevel;
   }
+  // 이미 나온 단어 빼기
+  const bk = bankKey(selectedGame, level);
+  let exclude = [], reset = false;
+  if (bk) {
+    const list = bankList(bk);
+    const used = usedWords[bk] || {};
+    exclude = list.map(x => x.w).filter(w => used[w]);
+    if (list.length - exclude.length < (bk.startsWith("idiom") ? IDIOM_MIN : ENG_MIN)) { exclude = []; reset = true; }
+  }
+  const r = {
+    id,
+    game: selectedGame,
+    level,
+    levels,
+    seed: Math.floor(Math.random() * 2 ** 31),
+    startAt: now() + COUNTDOWN_MS,
+    by: uid,
+    exclude
+  };
   try {
-    await set(ref(db, `rooms/${ROOM}/round`), {
-      id,
-      game: selectedGame,
-      level,
-      levels,
-      seed: Math.floor(Math.random() * 2 ** 31),
-      startAt: now() + COUNTDOWN_MS,
-      by: uid
-    });
+    await set(ref(db, `rooms/${ROOM}/round`), r);
     levelOverride = {};
+    if (bk) {
+      const next = reset ? {} : { ...(usedWords[bk] || {}) };
+      for (const w of puzzleWords(r)) next[w] = true;
+      set(ref(db, `rooms/${ROOM}/used/${bk}`), next).catch(() => {});
+    }
   } catch {
     toast("시작하지 못했어요. 다시 눌러 주세요");
   }
@@ -248,6 +303,40 @@ $("share-btn").addEventListener("click", async () => {
 
 $("rename-btn").addEventListener("click", askName);
 $("back-btn").addEventListener("click", () => { show("view-lobby"); renderLobby(); });
+
+// ---------- 단어 목록 ----------
+function bankKey(game, level) {
+  if (GAMES[game]?.english) return "eng" + level;
+  if (game === "idiom") return "idiom" + level;
+  return null;
+}
+function bankList(key) {
+  return key.startsWith("idiom") ? idiomList(key.slice(5), custom) : engList(Number(key.slice(3)), custom);
+}
+function optsFor(r) {
+  return { custom, exclude: new Set(r.exclude || []) };
+}
+function puzzleWords(r) {
+  const o = optsFor(r);
+  if (r.game === "cross") return makeCrossword(r.seed, r.level, o).entries.map(e => e.word);
+  if (r.game === "anagram") return makeAnagram(r.seed, r.level, o).map(x => x.word);
+  if (r.game === "wordle") return makeWordle(r.seed, r.level, o).map(x => x.word);
+  if (r.game === "idiom") return makeIdiomCross(r.seed, r.level, o).entries.map(e => e.word);
+  return [];
+}
+function parseLines(text, isIdiom) {
+  if (isIdiom) return parseIdioms(text);
+  return String(text).split(/\r?\n|,/).map(s => s.trim()).filter(Boolean).map(s => {
+    const i = s.search(/[:：]/);
+    if (i < 0) return null;
+    return { w: s.slice(0, i).trim().toUpperCase(), m: s.slice(i + 1).trim() };
+  }).filter(x => x && /^[A-Z]{2,15}$/.test(x.w) && x.m);
+}
+function parseCustom(raw) {
+  const out = {};
+  for (const [k, v] of Object.entries(raw || {})) out[k] = parseLines(v, k.startsWith("idiom"));
+  return out;
+}
 
 // ---------- 판 진행 ----------
 async function onRound() {
@@ -267,7 +356,7 @@ async function onRound() {
 
   // 이미 끝낸 판이면 다시 하지 않음
   const mine = await get(ref(db, `rooms/${ROOM}/results/${round.id}/${uid}`));
-  if (mine.exists() && typeof mine.val().timeMs === "number") { activeRoundId = round.id; return; }
+  if (mine.exists() && (typeof mine.val().timeMs === "number" || mine.val().gaveUp)) { activeRoundId = round.id; return; }
 
   activeRoundId = round.id;
   startCountdown(round);
@@ -304,27 +393,74 @@ function playRound(r) {
     $("game-timer").textContent = fmtTime(performance.now() - t0 + penalty);
   }, 100);
 
-  const finish = (detail) => {
+  let ended = false;
+  const end = () => {
+    if (ended) return false;
+    ended = true;
     clearInterval(gameTimer);
     keyHandler = null;
+    quitHandler = null;
+    return true;
+  };
+  const finish = (detail, summary) => {
+    if (!end()) return;
     const timeMs = Math.round(performance.now() - t0 + penalty);
     set(myResultRef, { name: myName, timeMs, ...detail, finishedAt: serverTimestamp() });
     $("my-result").textContent = `🎉 완료! ${fmtTime(timeMs)}`;
+    showSummary(summary);
     show("view-result");
   };
+  quitHandler = () => {
+    if (!end()) return;
+    set(myResultRef, { name: myName, gaveUp: true, finishedAt: serverTimestamp() });
+    $("my-result").textContent = "이번 판은 포기했어요";
+    showSummary(null);
+    show("view-result");
+  };
+  quitArmed = false;
+  $("quit-btn").textContent = "🏳️ 포기하기";
 
   const addPenalty = ms => { penalty += ms; };
   if (r.game === "match") playMatch(r.seed, r.level, finish);
   else if (r.game === "sudoku") playSudoku(r.seed, r.level, addPenalty, finish);
   else if (GAMES[r.game]?.english) {
-    const ctx = {
-      seed: r.seed, level: r.level, custom: null,
-      grid: $("game-grid"), controls: $("game-controls"), prompt: $("game-prompt"), progress: $("game-progress"),
-      toast, addPenalty, finish, setKeys: fn => { keyHandler = fn; }
-    };
+    const ctx = gameCtx(r, addPenalty, finish);
     ({ cross: playCrossword, anagram: playAnagram, wordle: playWordle })[r.game](ctx);
   }
+  else if (r.game === "idiom") playIdiom(gameCtx(r, addPenalty, finish));
   else playSpeed(r.seed, r.level, addPenalty, finish);
+}
+
+function gameCtx(r, addPenalty, finish) {
+  return {
+    seed: r.seed, level: r.level, opts: optsFor(r),
+    grid: $("game-grid"), controls: $("game-controls"), prompt: $("game-prompt"), progress: $("game-progress"),
+    toast, addPenalty, finish, setKeys: fn => { keyHandler = fn; }
+  };
+}
+
+let quitHandler = null, quitArmed = false;
+$("quit-btn").addEventListener("click", () => {
+  if (!quitHandler) return;
+  if (!quitArmed) {
+    quitArmed = true;
+    $("quit-btn").textContent = "정말 포기할까요? 한 번 더 누르세요";
+    setTimeout(() => { quitArmed = false; $("quit-btn").textContent = "🏳️ 포기하기"; }, 3500);
+    return;
+  }
+  quitHandler();
+});
+
+function showSummary(lines) {
+  const box = $("my-summary");
+  box.hidden = !lines?.length;
+  const ul = $("summary-list");
+  ul.textContent = "";
+  for (const t of lines || []) {
+    const li = document.createElement("li");
+    li.textContent = t;
+    ul.appendChild(li);
+  }
 }
 
 // ---------- 게임 1: 빨리 찾기 ----------
@@ -558,7 +694,8 @@ function renderBoard(el, results) {
     el.appendChild(row(medals[k] || `${k + 1}위`, r.name, fmtTime(r.timeMs) + extra, r.uid === uid));
   });
   for (const r of playing) {
-    const li = row("", r.name, "푸는 중…", r.uid === uid);
+    const label = r.gaveUp ? "포기" : players[r.uid]?.online ? "푸는 중…" : "나감";
+    const li = row("", r.name, label, r.uid === uid);
     li.querySelector(".time").className = "time playing";
     el.appendChild(li);
   }
@@ -575,3 +712,81 @@ function row(rank, name, time, me) {
   return li;
 }
 
+
+// ---------- 단어 관리 ----------
+const ADMIN_CATS = [
+  ...Object.keys(WORDS).map(l => [`eng${l}`, `영어 ${l}등급 (${LEVEL_NAMES[l]})`]),
+  ...Object.entries(IDIOM_LEVELS).map(([k, v]) => [`idiom${k}`, `사자성어 ${v.label}`])
+];
+for (const [k, label] of ADMIN_CATS) {
+  const o = document.createElement("option");
+  o.value = k;
+  o.textContent = label;
+  $("admin-cat").appendChild(o);
+}
+const defaultList = k => (k.startsWith("idiom") ? IDIOMS[k.slice(5)] : WORDS[Number(k.slice(3))]);
+const toText = list => list.map(x => `${x.w} : ${x.m}`).join("\n");
+
+function loadAdminCat() {
+  const k = $("admin-cat").value;
+  const isCustom = customRaw[k] != null;
+  const list = isCustom ? parseLines(customRaw[k], k.startsWith("idiom")) : defaultList(k);
+  $("admin-text").value = toText(list);
+  const used = Object.keys(usedWords[k] || {}).length;
+  $("admin-info").textContent = `${isCustom ? "바꾼 목록" : "기본 목록"} · ${list.length}개 · 이 방에서 나온 단어 ${used}개`;
+}
+
+$("admin-btn").addEventListener("click", async () => {
+  show("view-admin");
+  let ok = false;
+  try { ok = (await get(ref(db, `admins/${uid}`))).exists(); } catch { /* 권한 없음 */ }
+  $("admin-login").hidden = ok;
+  $("admin-panel").hidden = !ok;
+  if (ok) loadAdminCat();
+});
+$("admin-back").addEventListener("click", () => { show("view-lobby"); renderLobby(); });
+$("admin-cat").addEventListener("change", loadAdminCat);
+
+$("admin-login-btn").addEventListener("click", async () => {
+  const code = $("admin-code").value.trim();
+  if (!code) return;
+  const tries = [code];
+  if (/^\d+$/.test(code)) tries.push(Number(code));
+  for (const c of tries) {
+    try {
+      await set(ref(db, `admins/${uid}`), { code: c });
+      $("admin-login").hidden = true;
+      $("admin-panel").hidden = false;
+      loadAdminCat();
+      return;
+    } catch { /* 다음 시도 */ }
+  }
+  toast("관리 코드가 맞지 않아요");
+});
+
+$("admin-save").addEventListener("click", async () => {
+  const k = $("admin-cat").value;
+  const raw = $("admin-text").value;
+  const lines = raw.split(/\r?\n/).filter(s => s.trim());
+  const list = parseLines(raw, k.startsWith("idiom"));
+  if (list.length < 10) { toast(`10개 이상 필요해요 (지금 ${list.length}개)`); return; }
+  try {
+    await set(ref(db, `custom/${k}`), toText(list));
+    const bad = lines.length - list.length;
+    toast(`저장했어요 · ${list.length}개` + (bad > 0 ? ` (형식이 틀린 ${bad}줄 제외)` : ""));
+    setTimeout(loadAdminCat, 300);
+  } catch {
+    toast("저장 권한이 없어요. 관리 코드를 다시 입력해 주세요");
+    $("admin-login").hidden = false;
+  }
+});
+$("admin-reset").addEventListener("click", async () => {
+  const k = $("admin-cat").value;
+  try { await set(ref(db, `custom/${k}`), null); toast("기본 목록으로 되돌렸어요"); setTimeout(loadAdminCat, 300); }
+  catch { toast("권한이 없어요"); }
+});
+$("admin-clear").addEventListener("click", async () => {
+  const k = $("admin-cat").value;
+  try { await set(ref(db, `rooms/${ROOM}/used/${k}`), null); toast("이미 나온 단어를 초기화했어요"); setTimeout(loadAdminCat, 300); }
+  catch { toast("방장이나 관리자만 할 수 있어요"); }
+});
