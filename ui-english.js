@@ -3,7 +3,7 @@ import { HINT_PENALTY_MS, MAX_HINTS } from "./games.js";
 import { makeIdiomCross } from "./idioms.js";
 import {
   makeCrossword, makeAnagram, makeWordle, scoreGuess,
-  WORDLE_TRIES, WORDLE_FAIL_MS
+  WORDLE_TRIES
 } from "./english.js";
 
 const KEY_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
@@ -70,6 +70,12 @@ function hintButton(ctx, state, onUse) {
   draw();
   return b;
 }
+
+// 제한 시간
+export const CROSS_LIMIT_MS = lv => (lv <= 3 ? 5 : lv <= 6 ? 8 : 12) * 60000;
+export const IDIOM_LIMIT_MS = { easy: 4 * 60000, mid: 6 * 60000, hard: 10 * 60000 };
+export const WORDLE_TOTAL_MS = 10 * 60000;
+export const WORDLE_WORD_MS = 3 * 60000;
 
 // =====================================================================
 // 🔤 크로스워드 (영어 · 사자성어 공용)
@@ -251,6 +257,26 @@ export function playCrossword(ctx, mode = {}) {
   }
   ctx.prompt.textContent = mode.title || `영어 크로스워드 · ${entries.length}단어`;
   render();
+
+  // 시간이 다 되면: 맞힌 칸으로 점수를 내고 정답을 보여 줌
+  ctx.setLimit(mode.limitMs ?? CROSS_LIMIT_MS(ctx.level), () => {
+    if (state.done) return;
+    state.done = true;
+    let total = 0, correct = 0;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      if (sol[r][c] === null) continue;
+      total++;
+      const x = cells[r][c];
+      if (vals[r][c] === sol[r][c]) correct++;
+      else { x.b.classList.add("missed"); x.ch.textContent = sol[r][c]; }
+    }
+    const score = Math.round((correct / total) * 100);
+    ctx.toast(`시간 종료 · ${correct}/${total}칸`);
+    setTimeout(() => ctx.finish(
+      { partial: true, score, scoreText: `${score}점 (${correct}/${total}칸)`, hints: state.hints },
+      mode.summary?.(entries)
+    ), 2500);
+  });
 }
 
 // =====================================================================
@@ -268,7 +294,8 @@ export function playIdiom(ctx) {
       const others = pz.chars.filter(c => !need.includes(c));
       return shuffleR(need.concat(shuffleR(others).slice(0, extra)));
     },
-    summary: entries => entries.map(e => `${e.word} — ${e.meaning}`)
+    summary: entries => entries.map(e => `${e.word} — ${e.meaning}`),
+    limitMs: IDIOM_LIMIT_MS[ctx.level] ?? IDIOM_LIMIT_MS.mid
   });
 }
 function shuffleR(a) {
@@ -389,7 +416,8 @@ export function playAnagram(ctx) {
 export function playWordle(ctx) {
   const words = makeWordle(ctx.seed, ctx.level, ctx.opts);
   const state = { hints: 0, done: false };
-  let wi = 0, guesses, cur, busy = false, fails = 0, showMeaning, revealed;
+  const points = [];              // 단어별 점수 (1번에 100점, 한 번 더 할 때마다 -10점, 실패 0점)
+  let wi = 0, guesses, cur, busy = false, showMeaning, revealed, wordEnd;
   const keyColor = {};
 
   const grid = ctx.grid;
@@ -413,9 +441,19 @@ export function playWordle(ctx) {
 
   function load() {
     guesses = []; cur = ""; showMeaning = false; revealed = new Set();
+    wordEnd = performance.now() + WORDLE_WORD_MS;
     for (const k in keyColor) delete keyColor[k];
-    ctx.progress.textContent = `단어 ${wi + 1} / ${words.length}`;
-    drawPrompt(); render();
+    drawPrompt(); render(); tick();
+  }
+  function tick() {
+    if (state.done) return;
+    const left = Math.max(0, wordEnd - performance.now());
+    const m = Math.floor(left / 60000), sec = Math.floor((left % 60000) / 1000);
+    ctx.progress.textContent = `단어 ${wi + 1}/${words.length} · ⏱ ${m}:${String(sec).padStart(2, "0")}`;
+    ctx.progress.classList.toggle("warn", left <= 30000);
+    if (left <= 0 && !busy) { endWord(false, "시간 초과"); return; }
+    if (ctx.isOver()) return;
+    setTimeout(tick, 250);
   }
   function drawPrompt() {
     const w = words[wi].word;
@@ -424,6 +462,34 @@ export function playWordle(ctx) {
       ? `${words[wi].meaning} · ${pattern}`
       : `${w.length}글자 단어를 맞혀 보세요` + (revealed.size ? ` · ${pattern}` : "");
   }
+  function endWord(solved, why) {
+    const w = words[wi];
+    busy = true;
+    points.push(solved ? 100 - (guesses.length - 1) * 10 : 0);
+    if (!solved) ctx.toast(`${why} · 정답: ${w.word} (${w.meaning})`);
+    setTimeout(() => {
+      if (state.done) return;
+      busy = false;
+      wi++;
+      if (wi >= words.length) done();
+      else load();
+    }, solved ? 900 : 2200);
+  }
+  function done(timeUp) {
+    if (state.done) return;
+    state.done = true;
+    while (points.length < words.length) points.push(0);
+    const score = Math.round(points.reduce((a, b) => a + b, 0) / words.length);
+    const solvedN = points.filter(p => p > 0).length;
+    const summary = words.map((w, i) => `${w.word} — ${w.meaning}${points[i] ? "" : " (못 맞힘)"}`);
+    if (solvedN === words.length) ctx.finish({ hints: state.hints, score }, summary);
+    else {
+      if (timeUp) ctx.toast("전체 시간 종료");
+      ctx.finish({ partial: true, score, scoreText: `${score}점 (${solvedN}/${words.length}단어)`, hints: state.hints }, summary);
+    }
+  }
+  ctx.setLimit(WORDLE_TOTAL_MS, () => done(true));
+
   function key(k) {
     if (busy || state.done) return;
     const w = words[wi].word;
@@ -436,20 +502,8 @@ export function playWordle(ctx) {
       const solved = sc.every(v => v === 2);
       cur = "";
       render();
-      if (solved || guesses.length >= WORDLE_TRIES) {
-        busy = true;
-        if (!solved) {
-          fails++;
-          ctx.addPenalty(WORDLE_FAIL_MS);
-          ctx.toast(`정답: ${w} (${words[wi].meaning}) · +60초`);
-        }
-        setTimeout(() => {
-          busy = false;
-          wi++;
-          if (wi >= words.length) { state.done = true; ctx.finish({ hints: state.hints, wrong: fails }); }
-          else load();
-        }, solved ? 900 : 2200);
-      }
+      if (solved) endWord(true);
+      else if (guesses.length >= WORDLE_TRIES) endWord(false, "6번 안에 못 맞혔어요");
       return;
     } else if (k.length === 1 && cur.length < w.length) cur += k;
     render();
@@ -476,4 +530,3 @@ export function playWordle(ctx) {
   }
   load();
 }
-

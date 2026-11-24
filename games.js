@@ -144,7 +144,10 @@ export function fmtTime(ms) {
 // 순위: 끝낸 사람은 시간순, 풀고 있는 사람은 뒤에
 export function rankResults(results) {
   const rows = Object.entries(results || {}).map(([uid, r]) => ({ uid, ...r }));
-  const done = rows.filter(r => typeof r.timeMs === "number").sort((a, b) => a.timeMs - b.timeMs);
+  // 다 푼 사람은 시간순, 시간 안에 못 푼 사람은 그 뒤에 점수순
+  const done = rows.filter(r => typeof r.timeMs === "number").sort((a, b) =>
+    ((a.partial ? 1 : 0) - (b.partial ? 1 : 0)) ||
+    (a.partial ? (b.score - a.score) || (a.timeMs - b.timeMs) : a.timeMs - b.timeMs));
   const playing = rows.filter(r => typeof r.timeMs !== "number")
     .sort((a, b) => (a.gaveUp ? 1 : 0) - (b.gaveUp ? 1 : 0));
   return { done, playing };

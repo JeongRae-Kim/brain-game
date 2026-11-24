@@ -225,3 +225,7 @@ input {
 .summary li { margin: 6px 0; }
 #admin-cat, #admin-text { width: 100%; font-size: 17px; padding: 10px; border: 2px solid var(--line); border-radius: 12px; margin: 6px 0; background: #fff; }
 #admin-text { font-family: inherit; line-height: 1.6; }
+#game-timer.warn, #game-progress.warn { color: var(--bad); animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: .35; } }
+.cw.missed { background: #ffe8d6; }
+.cw.missed .ch { color: #c65a24; }

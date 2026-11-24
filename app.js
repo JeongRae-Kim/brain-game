@@ -389,10 +389,21 @@ function playRound(r) {
   $("game-grid").style.maxWidth = "";
   const t0 = performance.now();
   let penalty = 0;
+  let limitEnd = null, onExpire = null;
+  const timerEl = $("game-timer");
+  timerEl.classList.remove("warn");
+  $("game-progress").classList.remove("warn");
   clearInterval(gameTimer);
   gameTimer = setInterval(() => {
-    $("game-timer").textContent = fmtTime(performance.now() - t0 + penalty);
-  }, 100);
+    const t = performance.now();
+    if (limitEnd == null) { timerEl.textContent = fmtTime(t - t0 + penalty); return; }
+    const left = Math.max(0, limitEnd - t);
+    const m = Math.floor(left / 60000), sec = Math.floor((left % 60000) / 1000);
+    timerEl.textContent = `남은 ${m}:${String(sec).padStart(2, "0")}`;
+    timerEl.classList.toggle("warn", left <= 30000);
+    if (left <= 0 && onExpire) { const f = onExpire; onExpire = null; f(); }
+  }, 200);
+  const setLimit = (ms, fn) => { limitEnd = t0 + ms; onExpire = fn; };
 
   let ended = false;
   const end = () => {
@@ -407,7 +418,9 @@ function playRound(r) {
     if (!end()) return;
     const timeMs = Math.round(performance.now() - t0 + penalty);
     set(myResultRef, { name: myName, timeMs, ...detail, finishedAt: serverTimestamp() });
-    $("my-result").textContent = `🎉 완료! ${fmtTime(timeMs)}`;
+    $("my-result").textContent = detail?.partial
+      ? `⏰ 시간 안에 다 못 풀었어요 · ${detail.scoreText}`
+      : `🎉 완료! ${fmtTime(timeMs)}`;
     showSummary(summary);
     show("view-result");
   };
@@ -425,15 +438,16 @@ function playRound(r) {
   if (r.game === "match") playMatch(r.seed, r.level, finish);
   else if (r.game === "sudoku") playSudoku(r.seed, r.level, addPenalty, finish);
   else if (GAMES[r.game]?.english) {
-    const ctx = gameCtx(r, addPenalty, finish);
+    const ctx = gameCtx(r, addPenalty, finish, setLimit, () => ended);
     ({ cross: playCrossword, anagram: playAnagram, wordle: playWordle })[r.game](ctx);
   }
-  else if (r.game === "idiom") playIdiom(gameCtx(r, addPenalty, finish));
+  else if (r.game === "idiom") playIdiom(gameCtx(r, addPenalty, finish, setLimit, () => ended));
   else playSpeed(r.seed, r.level, addPenalty, finish);
 }
 
-function gameCtx(r, addPenalty, finish) {
+function gameCtx(r, addPenalty, finish, setLimit, isOver) {
   return {
+    setLimit, isOver,
     seed: r.seed, level: r.level, opts: optsFor(r),
     grid: $("game-grid"), controls: $("game-controls"), prompt: $("game-prompt"), progress: $("game-progress"),
     toast, addPenalty, finish, setKeys: fn => { keyHandler = fn; }
@@ -692,7 +706,8 @@ function renderBoard(el, results) {
   const medals = ["🥇", "🥈", "🥉"];
   done.forEach((r, k) => {
     const extra = (r.hints ? ` 💡${r.hints}` : "") + (r.wrong ? ` ✗${r.wrong}` : "");
-    el.appendChild(row(medals[k] || `${k + 1}위`, r.name, fmtTime(r.timeMs) + extra, r.uid === uid));
+    const main = r.partial ? `⏰ ${r.scoreText || r.score + "점"}` : fmtTime(r.timeMs);
+    el.appendChild(row(medals[k] || `${k + 1}위`, r.name, main + extra, r.uid === uid));
   });
   for (const r of playing) {
     const label = r.gaveUp ? "포기" : players[r.uid]?.online ? "푸는 중…" : "나감";
