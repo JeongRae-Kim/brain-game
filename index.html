@@ -160,6 +160,22 @@
   </section>
 </main>
 
+<button id="chat-fab" class="chat-fab" aria-label="대화">💬<span id="chat-badge" class="badge" hidden></span></button>
+<aside id="chat-panel" class="chat-panel">
+  <div class="chat-head">
+    <span>💬 대화</span>
+    <button id="chat-close" class="chat-close" aria-label="닫기">✕</button>
+  </div>
+  <ul id="chat-list" class="chat-list"></ul>
+  <div class="chat-quick">
+    <button data-q="👍">👍</button><button data-q="😂">😂</button><button data-q="👏">👏</button>
+    <button data-q="화이팅!">화이팅!</button><button data-q="어렵다 😅">어렵다 😅</button><button data-q="한 판 더!">한 판 더!</button>
+  </div>
+  <form id="chat-form" class="chat-form">
+    <input id="chat-input" maxlength="100" placeholder="메시지 입력" autocomplete="off">
+    <button type="submit">보내기</button>
+  </form>
+</aside>
 <div id="toast" class="toast" hidden></div>
 <script type="module" src="app.js"></script>
 </body>

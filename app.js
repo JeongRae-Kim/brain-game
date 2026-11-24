@@ -1,7 +1,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import {
-  getDatabase, ref, set, update, get, onValue, off, onDisconnect, serverTimestamp
+  getDatabase, ref, set, update, get, onValue, off, onDisconnect, serverTimestamp,
+  push, query, limitToLast
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { firebaseConfig } from "./config.js";
 import {
@@ -54,7 +55,10 @@ let custom = {};              // 위 목록을 읽어 둔 것
 let usedWords = {};           // 이 방에서 이미 나온 단어
 let handoverTo = null;
 let keyHandler = null;        // 실제 키보드 입력 (PC)
-document.addEventListener("keydown", e => { if (keyHandler) keyHandler(e); });
+document.addEventListener("keydown", e => {
+  if (e.target.closest?.("input, textarea, select")) return;   // 채팅·입력칸 타자는 게임으로 보내지 않음
+  if (keyHandler) keyHandler(e);
+});
 let activeRoundId = null;     // 내가 참여 중이거나 참여한 판
 let resultsRef = null;
 let latestResults = {};
@@ -123,6 +127,7 @@ function join() {
   onValue(ref(db, `${base}/round`), s => { round = s.val(); onRound(); });
   onValue(ref(db, `${base}/used`), s => { usedWords = s.val() || {}; });
   onValue(ref(db, "custom"), s => { customRaw = s.val() || {}; custom = parseCustom(customRaw); });
+  startChat();
 
   show("view-lobby");
 }
@@ -282,6 +287,7 @@ $("start-btn").addEventListener("click", async () => {
   try {
     await set(ref(db, `rooms/${ROOM}/round`), r);
     levelOverride = {};
+    sysChat(`새 게임 시작: ${GAMES[r.game]?.title || ""} ${levelText(r)}`);
     if (bk) {
       const next = reset ? {} : { ...(usedWords[bk] || {}) };
       for (const w of puzzleWords(r)) next[w] = true;
@@ -421,6 +427,7 @@ function playRound(r) {
     $("my-result").textContent = detail?.partial
       ? `⏰ 시간 안에 다 못 풀었어요 · ${detail.scoreText}`
       : `🎉 완료! ${fmtTime(timeMs)}`;
+    sysChat(detail?.partial ? `${myName}님 시간 종료 · ${detail.scoreText}` : `${myName}님 완료! ${fmtTime(timeMs)}`);
     showSummary(summary);
     show("view-result");
   };
@@ -806,3 +813,103 @@ $("admin-clear").addEventListener("click", async () => {
   try { await set(ref(db, `rooms/${ROOM}/used/${k}`), null); toast("이미 나온 단어를 초기화했어요"); setTimeout(loadAdminCat, 300); }
   catch { toast("방장이나 관리자만 할 수 있어요"); }
 });
+
+// ---------- 💬 대화 ----------
+const CHAT_KEEP = 50;
+let chatOpen = false, unread = 0, chatSeen = null, chatStarted = false;
+const wide = () => window.matchMedia("(min-width: 1000px)").matches;
+
+function chatRef() { return ref(db, `rooms/${ROOM}/chat`); }
+
+async function sendChat(text, sys = false) {
+  text = String(text).trim().slice(0, 100);
+  if (!text || !db) return;
+  try {
+    await push(chatRef(), { uid, name: myName, text, sys, t: serverTimestamp() });
+    // 오래된 메시지 정리
+    const s = await get(query(chatRef(), limitToLast(CHAT_KEEP + 20)));
+    if (s.size >= CHAT_KEEP + 20) {
+      const keys = Object.keys(s.val()).slice(0, 20);
+      for (const k of keys) set(ref(db, `rooms/${ROOM}/chat/${k}`), null).catch(() => {});
+    }
+  } catch { if (!sys) toast("메시지를 보내지 못했어요"); }
+}
+const sysChat = text => sendChat(text, true);
+
+function startChat() {
+  if (chatStarted) return;
+  chatStarted = true;
+  sysChat(`${myName}님이 들어왔어요`);
+  onValue(query(chatRef(), limitToLast(CHAT_KEEP)), s => {
+    const msgs = [];
+    s.forEach(c => { msgs.push({ id: c.key, ...c.val() }); });
+    renderChat(msgs);
+  });
+}
+
+function renderChat(msgs) {
+  const list = $("chat-list");
+  const atBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  list.textContent = "";
+  for (const m of msgs) {
+    const li = document.createElement("li");
+    if (m.sys) {
+      li.className = "sys";
+      li.textContent = m.text;
+    } else {
+      li.className = m.uid === uid ? "mine" : "";
+      if (m.uid !== uid) {
+        const n = document.createElement("b");
+        n.textContent = m.name || "손님";
+        li.appendChild(n);
+      }
+      const t = document.createElement("span");
+      t.className = "bubble";
+      t.textContent = m.text;
+      li.appendChild(t);
+      if (typeof m.t === "number") {
+        const d = new Date(m.t);
+        const tm = document.createElement("small");
+        tm.textContent = `${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
+        li.appendChild(tm);
+      }
+    }
+    list.appendChild(li);
+  }
+  if (atBottom || chatSeen === null) list.scrollTop = list.scrollHeight;
+  // 안 읽은 메시지 (닫혀 있을 때, 남이 쓴 일반 메시지)
+  const lastId = msgs.length ? msgs[msgs.length - 1].id : null;
+  if (chatSeen !== null && !chatOpen && !wide()) {
+    const idx = msgs.findIndex(m => m.id === chatSeen);
+    const fresh = (idx < 0 ? msgs : msgs.slice(idx + 1)).filter(m => m.uid !== uid && !m.sys);
+    unread += fresh.length;
+  }
+  chatSeen = lastId;
+  drawBadge();
+}
+
+function drawBadge() {
+  const b = $("chat-badge");
+  b.hidden = unread === 0;
+  b.textContent = unread > 9 ? "9+" : unread;
+}
+
+function setChatOpen(open) {
+  chatOpen = open;
+  document.body.classList.toggle("chat-open", open);
+  if (open) {
+    unread = 0;
+    drawBadge();
+    const list = $("chat-list");
+    list.scrollTop = list.scrollHeight;
+  }
+}
+$("chat-fab").addEventListener("click", () => setChatOpen(!chatOpen));
+$("chat-close").addEventListener("click", () => setChatOpen(false));
+$("chat-form").addEventListener("submit", e => {
+  e.preventDefault();
+  const v = $("chat-input").value;
+  $("chat-input").value = "";
+  sendChat(v);
+});
+for (const b of document.querySelectorAll("[data-q]")) b.addEventListener("click", () => sendChat(b.dataset.q));

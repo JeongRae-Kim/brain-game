@@ -195,7 +195,7 @@ input {
 .slots.shake { animation: shake .3s; }
 
 /* ---------- 워들 ---------- */
-.wordle { display: grid; gap: 6px; justify-content: center; }
+.wordle { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .wrow { display: grid; grid-template-columns: repeat(var(--len), 1fr); gap: 6px; width: min(100%, calc(var(--len) * 58px)); margin: 0 auto; }
 .wcell {
   aspect-ratio: 1 / 1; border: 2px solid #d8cfc2; border-radius: 6px; background: #fff;
@@ -229,3 +229,43 @@ input {
 @keyframes blink { 50% { opacity: .35; } }
 .cw.missed { background: #ffe8d6; }
 .cw.missed .ch { color: #c65a24; }
+
+/* ---------- 💬 대화 ---------- */
+.chat-fab {
+  position: fixed; right: 16px; bottom: 16px; width: 60px; height: 60px; border-radius: 50%;
+  border: 0; background: var(--accent); color: #fff; font-size: 28px; box-shadow: 0 4px 12px rgba(0,0,0,.2);
+  z-index: 30; cursor: pointer;
+}
+.chat-fab .badge {
+  position: absolute; top: -4px; right: -4px; min-width: 24px; height: 24px; padding: 0 6px; border-radius: 12px;
+  background: var(--bad); color: #fff; font-size: 14px; font-weight: 700; line-height: 24px;
+}
+.chat-panel {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 52vh; background: #fff; z-index: 40;
+  border-radius: 18px 18px 0 0; box-shadow: 0 -6px 20px rgba(0,0,0,.18);
+  display: flex; flex-direction: column; transform: translateY(105%); transition: transform .2s;
+}
+body.chat-open .chat-panel { transform: none; }
+body.chat-open .chat-fab { display: none; }
+.chat-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; font-weight: 700; border-bottom: 1px solid var(--line); }
+.chat-close { border: 0; background: none; font-size: 22px; cursor: pointer; }
+.chat-list { flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 10px 12px; font-size: 17px; }
+.chat-list li { margin: 6px 0; display: flex; flex-direction: column; align-items: flex-start; }
+.chat-list li b { font-size: 14px; color: var(--muted); }
+.chat-list .bubble { background: #f1ebe2; border-radius: 14px; padding: 6px 12px; max-width: 85%; word-break: break-word; }
+.chat-list small { font-size: 11px; color: #aaa; }
+.chat-list li.mine { align-items: flex-end; }
+.chat-list li.mine .bubble { background: #ffd9bf; }
+.chat-list li.sys { align-items: center; font-size: 14px; color: #888; }
+.chat-quick { display: flex; gap: 6px; padding: 6px 10px; overflow-x: auto; border-top: 1px solid var(--line); }
+.chat-quick button { flex: none; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 16px; cursor: pointer; }
+.chat-form { display: flex; gap: 6px; padding: 8px 10px 12px; }
+.chat-form input { flex: 1; margin: 0; font-size: 18px; padding: 10px; }
+.chat-form button { border: 0; background: var(--accent); color: #fff; border-radius: 12px; padding: 0 16px; font-size: 17px; font-weight: 700; }
+
+/* 넓은 화면: 오른쪽에 늘 붙어 있음 */
+@media (min-width: 1000px) {
+  body { padding-right: 340px; }
+  .chat-panel { left: auto; top: 0; width: 330px; height: 100vh; border-radius: 0; transform: none; box-shadow: -2px 0 10px rgba(0,0,0,.08); }
+  .chat-fab, .chat-close { display: none; }
+}
