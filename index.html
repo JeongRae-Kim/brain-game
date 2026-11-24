@@ -99,10 +99,21 @@
       <ol id="last-board" class="board"></ol>
     </div>
 
+    <div id="hof" class="card">
+      <h2>🏆 명예의 전당</h2>
+      <div class="sel-row"><select id="hof-game"></select><select id="hof-level"></select></div>
+      <div class="seg">
+        <button class="btn seg-btn" data-hs="all">역대</button>
+        <button class="btn seg-btn" data-hs="month">이번 달</button>
+      </div>
+      <ol id="hof-board" class="board"></ol>
+    </div>
+
     <div class="row">
       <button id="share-btn" class="btn">🔗 링크 공유</button>
       <button id="rename-btn" class="btn">✏️ 이름 바꾸기</button>
     </div>
+    <button id="stats-btn" class="btn">📈 기록 변화 보기</button>
     <button id="admin-btn" class="btn link-btn">⚙️ 단어 관리</button>
   </section>
 
@@ -127,6 +138,7 @@
   <!-- 결과 -->
   <section id="view-result" class="view" hidden>
     <p id="my-result" class="big"></p>
+    <p id="my-record" class="record" hidden></p>
     <div class="card">
       <h2>실시간 순위</h2>
       <ol id="result-board" class="board"></ol>
@@ -136,6 +148,19 @@
       <ul id="summary-list" class="summary"></ul>
     </div>
     <button id="back-btn" class="btn primary">대기실로</button>
+  </section>
+
+  <!-- 기록 변화 -->
+  <section id="view-stats" class="view" hidden>
+    <div class="card">
+      <h2>📈 기록 변화</h2>
+      <select id="st-person"></select>
+      <div class="sel-row"><select id="st-game"></select><select id="st-level"></select></div>
+      <p id="st-summary" class="st-summary"></p>
+      <div id="st-chart" class="st-chart"></div>
+      <ol id="st-list" class="board"></ol>
+    </div>
+    <button id="st-back" class="btn">대기실로</button>
   </section>
 
   <!-- 단어 관리 -->
