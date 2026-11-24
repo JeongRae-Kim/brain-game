@@ -5,8 +5,10 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
 import { firebaseConfig } from "./config.js";
 import {
-  GAMES, SPEED_TRIALS, SPEED_PENALTY_MS, makeSpeedPuzzle, makeMatchPuzzle, fmtTime, rankResults
+  GAMES, SPEED_TRIALS, SPEED_PENALTY_MS, HINT_PENALTY_MS, MAX_HINTS, LEVEL_MIN, LEVEL_MAX,
+  makeSpeedPuzzle, makeMatchPuzzle, suggestLevel, fmtTime, rankResults
 } from "./games.js";
+import { makeSudoku, SUDOKU_LEVELS, PEERS, ROW, COL, BOX } from "./sudoku.js";
 
 // ---------- 기본 ----------
 const params = new URLSearchParams(location.search);
@@ -38,7 +40,9 @@ const now = () => Date.now() + serverOffset;
 let players = {};
 let hostUid = null;
 let round = null;
-let selectedGame = "speed";
+let selectedGame = null;
+let levelOverride = {};       // 방장이 직접 바꾼 단계 (다음 시작에만 적용)
+let sudokuLevel = "easy";
 let activeRoundId = null;     // 내가 참여 중이거나 참여한 판
 let resultsRef = null;
 let latestResults = {};
@@ -138,9 +142,10 @@ function renderLobby() {
   $("host-panel").hidden = !iAmHost;
   $("guest-panel").hidden = iAmHost;
   $("claim-host-btn").hidden = iAmHost || hostOnline();
+  if (iAmHost) renderLevelPanel();
   renderBoard($("last-board"), latestResults);
   $("last-result").hidden = !round || Object.keys(latestResults).length === 0;
-  if (round) $("last-result-title").textContent = (GAMES[round.game]?.title || "") + " 순위";
+  if (round) $("last-result-title").textContent = `${GAMES[round.game]?.title || ""} ${levelText(round)} 순위`;
 }
 
 for (const b of document.querySelectorAll(".choice")) {
@@ -148,20 +153,72 @@ for (const b of document.querySelectorAll(".choice")) {
     selectedGame = b.dataset.game;
     for (const x of document.querySelectorAll(".choice")) x.classList.toggle("selected", x === b);
     $("start-btn").disabled = false;
+    renderLevelPanel();
   });
 }
 
+// ---------- 단계 ----------
+function plannedLevel(game) {
+  const s = suggestLevel(game, round, latestResults);
+  if (levelOverride[game] != null) return { ...s, level: levelOverride[game], manual: true };
+  return s;
+}
+const stars = n => "★".repeat(n) + "☆".repeat(LEVEL_MAX - n);
+
+function renderLevelPanel() {
+  const leveled = selectedGame && GAMES[selectedGame].leveled;
+  $("level-row").hidden = !leveled;
+  $("sudoku-row").hidden = selectedGame !== "sudoku";
+  if (leveled) {
+    const p = plannedLevel(selectedGame);
+    $("level-label").textContent = `${stars(p.level)} ${p.level}단계`;
+    $("level-note").textContent = p.manual ? "방장이 직접 정한 단계예요"
+      : p.change > 0 ? `지난 판이 빨라서 한 단계 올렸어요 (중간 기록 ${fmtTime(p.median)})`
+      : p.change < 0 ? `지난 판이 오래 걸려서 한 단계 내렸어요 (중간 기록 ${fmtTime(p.median)})`
+      : p.median != null ? `지난 판 중간 기록 ${fmtTime(p.median)} · 단계 유지` : "기록이 빨라지면 자동으로 어려워져요";
+    $("level-down").disabled = p.level <= LEVEL_MIN;
+    $("level-up").disabled = p.level >= LEVEL_MAX;
+  }
+  for (const b of document.querySelectorAll("[data-sl]")) b.classList.toggle("selected", b.dataset.sl === sudokuLevel);
+}
+function bumpLevel(d) {
+  const cur = plannedLevel(selectedGame).level;
+  levelOverride[selectedGame] = Math.min(LEVEL_MAX, Math.max(LEVEL_MIN, cur + d));
+  renderLevelPanel();
+}
+$("level-down").addEventListener("click", () => bumpLevel(-1));
+$("level-up").addEventListener("click", () => bumpLevel(1));
+for (const b of document.querySelectorAll("[data-sl]")) {
+  b.addEventListener("click", () => { sudokuLevel = b.dataset.sl; renderLevelPanel(); });
+}
+
+function levelText(r) {
+  if (r.game === "sudoku") return SUDOKU_LEVELS[r.level]?.label || "";
+  return r.level ? `${r.level}단계` : "";
+}
+
 $("start-btn").addEventListener("click", async () => {
-  if (hostUid !== uid) return;
+  if (hostUid !== uid || !selectedGame) return;
   const id = Date.now().toString(36);
+  const levels = { ...(round?.levels || {}) };
+  let level;
+  if (GAMES[selectedGame].leveled) {
+    level = plannedLevel(selectedGame).level;
+    levels[selectedGame] = level;
+  } else {
+    level = sudokuLevel;
+  }
   try {
     await set(ref(db, `rooms/${ROOM}/round`), {
       id,
       game: selectedGame,
+      level,
+      levels,
       seed: Math.floor(Math.random() * 2 ** 31),
       startAt: now() + COUNTDOWN_MS,
       by: uid
     });
+    levelOverride = {};
   } catch {
     toast("시작하지 못했어요. 다시 눌러 주세요");
   }
@@ -206,7 +263,7 @@ async function onRound() {
 function startCountdown(r) {
   clearInterval(countdownTimer);
   show("view-countdown");
-  $("countdown-game").textContent = GAMES[r.game]?.title || "";
+  $("countdown-game").textContent = `${GAMES[r.game]?.title || ""} · ${levelText(r)}`;
   const tick = () => {
     const left = r.startAt - now();
     if (left <= 0) {
@@ -225,6 +282,8 @@ function playRound(r) {
   set(myResultRef, { name: myName, playing: true });
 
   show("view-game");
+  $("game-controls").textContent = "";
+  $("game-grid").className = "grid";
   const t0 = performance.now();
   let penalty = 0;
   clearInterval(gameTimer);
@@ -240,13 +299,15 @@ function playRound(r) {
     show("view-result");
   };
 
-  if (r.game === "match") playMatch(r.seed, finish);
-  else playSpeed(r.seed, ms => { penalty += ms; }, finish);
+  const addPenalty = ms => { penalty += ms; };
+  if (r.game === "match") playMatch(r.seed, r.level, finish);
+  else if (r.game === "sudoku") playSudoku(r.seed, r.level, addPenalty, finish);
+  else playSpeed(r.seed, r.level, addPenalty, finish);
 }
 
 // ---------- 게임 1: 빨리 찾기 ----------
-function playSpeed(seed, addPenalty, finish) {
-  const trials = makeSpeedPuzzle(seed);
+function playSpeed(seed, level, addPenalty, finish) {
+  const trials = makeSpeedPuzzle(seed, level || 3);
   const grid = $("game-grid");
   let i = 0, wrong = 0;
 
@@ -280,16 +341,16 @@ function playSpeed(seed, addPenalty, finish) {
 }
 
 // ---------- 게임 2: 짝맞추기 ----------
-function playMatch(seed, finish) {
-  const cards = makeMatchPuzzle(seed);
+function playMatch(seed, level, finish) {
+  const { cards, cols, pairs } = makeMatchPuzzle(seed, level || 2);
   const grid = $("game-grid");
-  grid.style.gridTemplateColumns = "repeat(4, 1fr)";
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   grid.textContent = "";
   $("game-prompt").textContent = "같은 그림 두 장을 찾으세요";
   let open = [], matched = 0, moves = 0, lock = false;
-  $("game-progress").textContent = `0 / 8쌍`;
+  $("game-progress").textContent = `0 / ${pairs}쌍`;
 
-  cards.forEach((face, idx) => {
+  cards.forEach(face => {
     const b = document.createElement("button");
     b.className = "cell back";
     b.textContent = face;
@@ -304,8 +365,8 @@ function playMatch(seed, finish) {
       if (x.face === y.face) {
         x.b.classList.add("matched"); y.b.classList.add("matched");
         matched++;
-        $("game-progress").textContent = `${matched} / 8쌍`;
-        if (matched === 8) setTimeout(() => finish({ moves }), 300);
+        $("game-progress").textContent = `${matched} / ${pairs}쌍`;
+        if (matched === pairs) setTimeout(() => finish({ moves }), 300);
       } else {
         lock = true;
         setTimeout(() => { x.b.classList.add("back"); y.b.classList.add("back"); lock = false; }, 700);
@@ -315,13 +376,164 @@ function playMatch(seed, finish) {
   });
 }
 
+// ---------- 게임 3: 스도쿠 ----------
+function playSudoku(seed, level, addPenalty, finish) {
+  const { puzzle, solution } = makeSudoku(seed, level || "easy");
+  const vals = puzzle.slice();
+  const given = puzzle.map(v => v !== 0);
+  const hinted = new Array(81).fill(false);
+  const notes = Array.from({ length: 81 }, () => new Set());
+  let sel = given.indexOf(false);
+  let memo = false, hints = 0, done = false;
+
+  const grid = $("game-grid");
+  grid.className = "sudoku";
+  grid.style.gridTemplateColumns = "";
+  grid.textContent = "";
+  $("game-prompt").textContent = `스도쿠 · ${SUDOKU_LEVELS[level]?.label || ""}`;
+
+  const cells = [];
+  for (let i = 0; i < 81; i++) {
+    const b = document.createElement("button");
+    b.className = "sd";
+    if (COL(i) % 3 === 2 && COL(i) < 8) b.classList.add("br");
+    if (ROW(i) % 3 === 2 && ROW(i) < 8) b.classList.add("bb");
+    b.addEventListener("click", () => { sel = i; render(); });
+    grid.appendChild(b);
+    cells.push(b);
+  }
+
+  // 숫자판 + 도구
+  const ctr = $("game-controls");
+  const pad = document.createElement("div");
+  pad.className = "pad";
+  const padBtns = [];
+  for (let n = 1; n <= 9; n++) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = n;
+    b.addEventListener("click", () => press(n));
+    pad.appendChild(b);
+    padBtns.push(b);
+  }
+  const tools = document.createElement("div");
+  tools.className = "tools";
+  const mk = (txt, fn) => {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.textContent = txt;
+    b.addEventListener("click", fn);
+    tools.appendChild(b);
+    return b;
+  };
+  const memoBtn = mk("✏️ 메모 끔", () => { memo = !memo; render(); });
+  mk("⌫ 지우기", () => {
+    if (sel < 0 || given[sel] || hinted[sel]) return;
+    vals[sel] = 0;
+    notes[sel].clear();
+    render();
+  });
+  const hintBtn = mk("", useHint);
+  ctr.append(pad, tools);
+
+  function press(n) {
+    if (done || sel < 0 || given[sel] || hinted[sel]) return;
+    if (memo) {
+      if (vals[sel]) return;
+      notes[sel].has(n) ? notes[sel].delete(n) : notes[sel].add(n);
+    } else {
+      vals[sel] = vals[sel] === n ? 0 : n;
+      notes[sel].clear();
+      if (vals[sel]) for (const p of PEERS[sel]) notes[p].delete(n);
+    }
+    render();
+    check();
+  }
+
+  function useHint() {
+    if (done) return;
+    if (hints >= MAX_HINTS) { toast(`힌트는 최대 ${MAX_HINTS}개까지예요`); return; }
+    let i = sel;
+    if (i < 0 || given[i] || hinted[i] || vals[i] === solution[i]) {
+      i = vals.findIndex((v, k) => !given[k] && v !== solution[k]);
+    }
+    if (i < 0) return;
+    vals[i] = solution[i];
+    hinted[i] = true;
+    notes[i].clear();
+    for (const p of PEERS[i]) notes[p].delete(solution[i]);
+    hints++;
+    addPenalty(HINT_PENALTY_MS);
+    toast("힌트 사용 · +30초");
+    sel = i;
+    render();
+    check();
+  }
+
+  function check() {
+    if (vals.every((v, i) => v === solution[i])) {
+      done = true;
+      setTimeout(() => finish({ hints }), 400);
+    } else if (vals.every(v => v)) {
+      toast("다 채웠지만 틀린 칸이 있어요");
+    }
+  }
+
+  function conflicts() {
+    const bad = new Set();
+    for (let i = 0; i < 81; i++) {
+      if (!vals[i]) continue;
+      for (const p of PEERS[i]) if (vals[p] === vals[i]) { bad.add(i); bad.add(p); }
+    }
+    return bad;
+  }
+
+  function render() {
+    const bad = conflicts();
+    const sv = sel >= 0 ? vals[sel] : 0;
+    for (let i = 0; i < 81; i++) {
+      const b = cells[i];
+      b.classList.toggle("given", given[i]);
+      b.classList.toggle("hinted", hinted[i]);
+      b.classList.toggle("sel", i === sel);
+      b.classList.toggle("peer", sel >= 0 && i !== sel && PEERS[sel].includes(i));
+      b.classList.toggle("same", sv > 0 && i !== sel && vals[i] === sv);
+      b.classList.toggle("conflict", bad.has(i) && !given[i]);
+      b.textContent = "";
+      if (vals[i]) {
+        b.textContent = vals[i];
+      } else if (notes[i].size) {
+        const g = document.createElement("div");
+        g.className = "notes";
+        for (let n = 1; n <= 9; n++) {
+          const s = document.createElement("span");
+          s.textContent = notes[i].has(n) ? n : "";
+          g.appendChild(s);
+        }
+        b.appendChild(g);
+      }
+    }
+    const counts = new Array(10).fill(0);
+    vals.forEach(v => counts[v]++);
+    padBtns.forEach((b, k) => b.classList.toggle("done", counts[k + 1] >= 9));
+    memoBtn.textContent = memo ? "✏️ 메모 켬" : "✏️ 메모 끔";
+    memoBtn.classList.toggle("toggle", true);
+    memoBtn.classList.toggle("on", memo);
+    hintBtn.textContent = `💡 힌트 ${MAX_HINTS - hints}`;
+    hintBtn.disabled = hints >= MAX_HINTS;
+    $("game-progress").textContent = `빈칸 ${vals.filter(v => !v).length}개`;
+  }
+  render();
+}
+
 // ---------- 순위표 ----------
 function renderBoard(el, results) {
   el.textContent = "";
   const { done, playing } = rankResults(results);
   const medals = ["🥇", "🥈", "🥉"];
   done.forEach((r, k) => {
-    el.appendChild(row(medals[k] || `${k + 1}위`, r.name, fmtTime(r.timeMs), r.uid === uid));
+    const extra = (r.hints ? ` 💡${r.hints}` : "") + (r.wrong ? ` ✗${r.wrong}` : "");
+    el.appendChild(row(medals[k] || `${k + 1}위`, r.name, fmtTime(r.timeMs) + extra, r.uid === uid));
   });
   for (const r of playing) {
     const li = row("", r.name, "푸는 중…", r.uid === uid);

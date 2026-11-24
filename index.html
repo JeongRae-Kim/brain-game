@@ -45,6 +45,22 @@
       <div class="choices">
         <button class="btn choice" data-game="speed">⚡ 빨리 찾기<small>그림을 빨리 찾아 누르기</small></button>
         <button class="btn choice" data-game="match">🃏 짝맞추기<small>같은 그림 카드 찾기</small></button>
+        <button class="btn choice" data-game="sudoku">🔢 스도쿠<small>숫자 9×9 · 힌트 3개</small></button>
+      </div>
+      <div id="level-row" class="level-row" hidden>
+        <div class="level-line">
+          <button id="level-down" class="btn small">－</button>
+          <span id="level-label"></span>
+          <button id="level-up" class="btn small">＋</button>
+        </div>
+        <p id="level-note" class="note"></p>
+      </div>
+      <div id="sudoku-row" class="level-row" hidden>
+        <div class="seg">
+          <button class="btn seg-btn" data-sl="easy">초급</button>
+          <button class="btn seg-btn" data-sl="mid">중급</button>
+          <button class="btn seg-btn" data-sl="hard">고급</button>
+        </div>
       </div>
       <button id="start-btn" class="btn primary" disabled>5초 뒤 다 함께 시작</button>
     </div>
@@ -79,6 +95,7 @@
     </div>
     <p id="game-prompt" class="prompt"></p>
     <div id="game-grid" class="grid"></div>
+    <div id="game-controls"></div>
   </section>
 
   <!-- 결과 -->

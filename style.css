@@ -102,3 +102,38 @@ input {
   position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
   background: #333; color: #fff; padding: 12px 20px; border-radius: 12px; font-size: 18px;
 }
+
+/* ---------- 단계 조절 ---------- */
+.choices .choice:last-child:nth-child(odd) { grid-column: span 2; min-height: 72px; }
+.level-row { margin-top: 12px; }
+.level-line { display: flex; align-items: center; gap: 10px; }
+.level-line span { flex: 1; text-align: center; font-size: 20px; font-weight: 700; }
+.btn.small { width: 60px; min-height: 52px; margin: 0; font-size: 24px; }
+.note { margin: 6px 0 0; font-size: 16px; color: var(--muted); text-align: center; min-height: 1em; }
+.seg { display: flex; gap: 8px; }
+.seg-btn { margin: 0; min-height: 52px; }
+.seg-btn.selected, .toggle.on { border-color: var(--accent); background: #fff1e8; }
+
+/* ---------- 스도쿠 ---------- */
+.sudoku { display: grid; grid-template-columns: repeat(9, 1fr); border: 3px solid #333; border-radius: 6px; overflow: hidden; gap: 0; }
+.sd {
+  aspect-ratio: 1 / 1; border: 0; border-right: 1px solid #c9c0b3; border-bottom: 1px solid #c9c0b3;
+  background: #fff; padding: 0; font-size: 24px; font-weight: 700; color: #2a62c9;
+  display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer;
+}
+.sd.br { border-right: 2px solid #333; }
+.sd.bb { border-bottom: 2px solid #333; }
+.sd.given { color: #222; background: #f3efe8; }
+.sd.hinted { color: var(--good); }
+.sd.peer { background: #fdf0e4; }
+.sd.given.peer { background: #efe5d6; }
+.sd.same { background: #ffd9bf; }
+.sd.sel { background: #ffc49b; }
+.sd.conflict { color: var(--bad); background: #ffe3e3; }
+.notes { display: grid; grid-template-columns: repeat(3, 1fr); width: 100%; height: 100%; font-size: 12px; font-weight: 600; color: #6a6a6a; line-height: 1; }
+.notes span { display: flex; align-items: center; justify-content: center; }
+.pad { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; margin-top: 12px; }
+.pad .btn { margin: 0; min-height: 52px; font-size: 24px; padding: 0; }
+.pad .btn.done { opacity: .3; }
+.tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+.tools .btn { margin: 0; min-height: 52px; font-size: 18px; }
