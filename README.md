@@ -1,1 +1,30 @@
-# brain-game
+# 가족 두뇌게임 (brain-game)
+
+가족·지인이 카카오톡 링크로 들어와 **같은 시각에 같은 문제**를 각자 풀고 순위를 겨루는 웹 게임입니다.
+
+- 게임: ⚡ 빨리 찾기(15문제, 틀리면 +2초) · 🃏 짝맞추기(4×4, 8쌍)
+- 고정 방 주소: `https://jeongrae-kim.github.io/brain-game/?room=family`
+- 로그인 없음 (Firebase 익명 인증), 이름만 입력
+
+## 진행 방법
+1. 단톡방 공지에 고정 방 링크를 올려 둡니다.
+2. 처음 들어온 사람이 방장(👑)이 됩니다. 방장이 나가면 다음 사람이 이어받습니다.
+3. 방장이 게임을 고르고 **시작**을 누르면 5초 뒤 모두에게 같은 문제가 열립니다.
+4. 늦게 온 사람도 시작 후 10분 안에는 참여할 수 있습니다(본인 시작 시점부터 시간 측정).
+
+다른 모임용 방은 `?room=friends`처럼 이름만 바꾸면 됩니다.
+
+## 구성
+| 파일 | 역할 |
+|---|---|
+| `index.html`, `style.css` | 화면 (큰 글씨·큰 버튼) |
+| `app.js` | 방 참여, 방장, 동시 시작, 순위 |
+| `games.js` | 문제 생성 (seed가 같으면 같은 문제) |
+| `config.js` | Firebase 웹 설정값 |
+| `database.rules.json` | Realtime Database 보안 규칙 |
+
+## Firebase 설정
+1. Realtime Database 생성 (asia-southeast1)
+2. Authentication → 익명 로그인 사용
+3. Realtime Database → 규칙 탭에 `database.rules.json` 내용을 붙여넣고 게시
+4. 웹 앱 설정값을 `config.js`에 입력

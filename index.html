@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>가족 두뇌게임</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>🧠 가족 두뇌게임</h1>
+  <div id="room-label" class="sub"></div>
+</header>
+
+<main>
+  <!-- 설정 전 안내 -->
+  <section id="view-setup" class="view" hidden>
+    <p class="big">아직 준비 중입니다.</p>
+    <p>config.js에 Firebase 설정값이 들어가면 시작할 수 있어요.</p>
+  </section>
+
+  <!-- 연결 중 -->
+  <section id="view-loading" class="view">
+    <p class="big">연결하는 중…</p>
+  </section>
+
+  <!-- 이름 입력 -->
+  <section id="view-name" class="view" hidden>
+    <p class="big">이름을 알려주세요</p>
+    <form id="name-form">
+      <input id="name-input" maxlength="10" placeholder="예: 큰아빠" autocomplete="off" required>
+      <button type="submit" class="btn primary">들어가기</button>
+    </form>
+  </section>
+
+  <!-- 대기실 -->
+  <section id="view-lobby" class="view" hidden>
+    <div class="card">
+      <h2>지금 들어와 있는 사람 <span id="online-count"></span></h2>
+      <ul id="player-list" class="players"></ul>
+    </div>
+
+    <div id="host-panel" class="card" hidden>
+      <h2>방장: 게임을 고르고 시작하세요</h2>
+      <div class="choices">
+        <button class="btn choice" data-game="speed">⚡ 빨리 찾기<small>그림을 빨리 찾아 누르기</small></button>
+        <button class="btn choice" data-game="match">🃏 짝맞추기<small>같은 그림 카드 찾기</small></button>
+      </div>
+      <button id="start-btn" class="btn primary" disabled>5초 뒤 다 함께 시작</button>
+    </div>
+
+    <div id="guest-panel" class="card" hidden>
+      <p class="big">방장이 시작하면 자동으로 게임이 열려요 ⏳</p>
+      <button id="claim-host-btn" class="btn" hidden>제가 방장 할게요</button>
+    </div>
+
+    <div id="last-result" class="card" hidden>
+      <h2 id="last-result-title">지난 판 순위</h2>
+      <ol id="last-board" class="board"></ol>
+    </div>
+
+    <div class="row">
+      <button id="share-btn" class="btn">🔗 링크 공유</button>
+      <button id="rename-btn" class="btn">✏️ 이름 바꾸기</button>
+    </div>
+  </section>
+
+  <!-- 카운트다운 -->
+  <section id="view-countdown" class="view" hidden>
+    <p id="countdown-game" class="big"></p>
+    <p id="countdown-num" class="countdown">5</p>
+  </section>
+
+  <!-- 게임 -->
+  <section id="view-game" class="view" hidden>
+    <div class="game-top">
+      <span id="game-progress"></span>
+      <span id="game-timer">0.0초</span>
+    </div>
+    <p id="game-prompt" class="prompt"></p>
+    <div id="game-grid" class="grid"></div>
+  </section>
+
+  <!-- 결과 -->
+  <section id="view-result" class="view" hidden>
+    <p id="my-result" class="big"></p>
+    <div class="card">
+      <h2>실시간 순위</h2>
+      <ol id="result-board" class="board"></ol>
+    </div>
+    <button id="back-btn" class="btn primary">대기실로</button>
+  </section>
+</main>
+
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
