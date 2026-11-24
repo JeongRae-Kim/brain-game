@@ -31,17 +31,31 @@ function pick(list, n, rand, filter) {
   return shuffle(src, rand).slice(0, n);
 }
 
+// ---------- 미리 채워 주는 글자 ----------
+// 1~3등급 2글자, 4~6등급 1~2글자(7글자 이상이면 2), 7~9등급 1글자 · 첫 글자·끝 글자는 비워 둠
+export function revealCount(level, len) {
+  const n = level <= 3 ? 2 : level <= 6 ? (len >= 7 ? 2 : 1) : 1;
+  return Math.min(n, Math.max(0, len - 2));
+}
+export function middlePicks(len, n, rand) {
+  const mids = [];
+  for (let i = 1; i < len - 1; i++) mids.push(i);
+  return shuffle(mids, rand).slice(0, n).sort((a, b) => a - b);
+}
+
 // ---------- 알파벳 맞추기 ----------
 const ANAGRAM_LEN = l => (l <= 3 ? [4, 6] : l <= 6 ? [5, 8] : [6, 10]);
 
 export function makeAnagram(seed, level, opts) {
   const rand = rng(seed);
   const [lo, hi] = ANAGRAM_LEN(level);
+  const rand2 = rng(seed + 13);
   return pick(bank(level, opts), ANAGRAM_COUNT, rand, x => x.w.length >= lo && x.w.length <= hi)
     .map(x => {
       let letters = shuffle(x.w.split(""), rand);
       for (let k = 0; k < 5 && letters.join("") === x.w; k++) letters = shuffle(letters, rand);
-      return { word: x.w, meaning: x.m, letters };
+      const fixed = middlePicks(x.w.length, revealCount(level, x.w.length), rand2);
+      return { word: x.w, meaning: x.m, letters, fixed };
     });
 }
 
@@ -142,7 +156,15 @@ function tryBuild(words, n, target, rand) {
 
 export function makeCrossword(seed, level, opts) {
   const { n, target } = CROSS_SIZE(level);
-  return buildCrossword(seed, bank(level, opts), n, target);
+  const pz = buildCrossword(seed, bank(level, opts), n, target);
+  const rand = rng(seed + 11);
+  const given = new Set();
+  for (const e of pz.entries) {
+    for (const i of middlePicks(e.word.length, revealCount(level, e.word.length), rand)) {
+      given.add((e.r + (e.down ? i : 0)) * pz.cols + e.c + (e.down ? 0 : i));
+    }
+  }
+  return { ...pz, given };
 }
 
 export function buildCrossword(seed, words, n, target) {

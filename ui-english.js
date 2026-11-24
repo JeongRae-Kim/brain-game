@@ -84,7 +84,7 @@ export const WORDLE_WORD_MS = 3 * 60000;
 export function playCrossword(ctx, mode = {}) {
   const pz = mode.puzzle || makeCrossword(ctx.seed, ctx.level, ctx.opts);
   const { rows, cols, sol, entries, numAt } = pz;
-  const given = mode.given || new Set();
+  const given = mode.given || pz.given || new Set();
   const vals = sol.map((row, r) => row.map((ch, c) => (ch ? (given.has(r * cols + c) ? ch : "") : null)));
   const hinted = new Set();
   const state = { hints: 0, done: false };
@@ -350,6 +350,13 @@ export function playAnagram(ctx) {
     slots = new Array(n).fill(null);
     used = new Array(n).fill(false);
     locked = new Array(n).fill(false);
+    // 미리 채워 주는 글자 (가운데 1~2개)
+    const w = words[wi];
+    for (const i of w.fixed || []) {
+      const t = w.letters.findIndex((ch, k) => ch === w.word[i] && !used[k]);
+      if (t < 0) continue;
+      slots[i] = t; used[t] = true; locked[i] = true;
+    }
     ctx.prompt.textContent = `${words[wi].meaning}  (${n}글자)`;
     ctx.progress.textContent = `${wi + 1} / ${words.length}`;
     render();
