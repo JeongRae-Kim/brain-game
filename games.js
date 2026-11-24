@@ -33,7 +33,10 @@ export const EMOJIS = EMOJI_GROUPS.flat();
 export const GAMES = {
   speed: { title: "⚡ 빨리 찾기", leveled: true },
   match: { title: "🃏 짝맞추기", leveled: true },
-  sudoku: { title: "🔢 스도쿠", leveled: false }
+  sudoku: { title: "🔢 스도쿠", leveled: false },
+  cross: { title: "🔤 영어 크로스워드", english: true },
+  anagram: { title: "🔠 알파벳 맞추기", english: true },
+  wordle: { title: "🟩 영어 워들", english: true }
 };
 
 export const LEVEL_MIN = 1;

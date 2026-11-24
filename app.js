@@ -8,7 +8,9 @@ import {
   GAMES, SPEED_TRIALS, SPEED_PENALTY_MS, HINT_PENALTY_MS, MAX_HINTS, LEVEL_MIN, LEVEL_MAX,
   makeSpeedPuzzle, makeMatchPuzzle, suggestLevel, fmtTime, rankResults
 } from "./games.js";
-import { makeSudoku, SUDOKU_LEVELS, PEERS, ROW, COL, BOX } from "./sudoku.js";
+import { makeSudoku, SUDOKU_LEVELS, PEERS, ROW, COL } from "./sudoku.js";
+import { playCrossword, playAnagram, playWordle } from "./ui-english.js";
+import { LEVEL_NAMES } from "./words.js";
 
 // ---------- 기본 ----------
 const params = new URLSearchParams(location.search);
@@ -43,6 +45,9 @@ let round = null;
 let selectedGame = null;
 let levelOverride = {};       // 방장이 직접 바꾼 단계 (다음 시작에만 적용)
 let sudokuLevel = "easy";
+let englishLevel = Number(store.get("bg-eng") || 1);
+let keyHandler = null;        // 실제 키보드 입력 (PC)
+document.addEventListener("keydown", e => { if (keyHandler) keyHandler(e); });
 let activeRoundId = null;     // 내가 참여 중이거나 참여한 판
 let resultsRef = null;
 let latestResults = {};
@@ -169,6 +174,8 @@ function renderLevelPanel() {
   const leveled = selectedGame && GAMES[selectedGame].leveled;
   $("level-row").hidden = !leveled;
   $("sudoku-row").hidden = selectedGame !== "sudoku";
+  $("eng-row").hidden = !(selectedGame && GAMES[selectedGame].english);
+  for (const b of document.querySelectorAll("[data-el]")) b.classList.toggle("selected", Number(b.dataset.el) === englishLevel);
   if (leveled) {
     const p = plannedLevel(selectedGame);
     $("level-label").textContent = `${stars(p.level)} ${p.level}단계`;
@@ -188,12 +195,16 @@ function bumpLevel(d) {
 }
 $("level-down").addEventListener("click", () => bumpLevel(-1));
 $("level-up").addEventListener("click", () => bumpLevel(1));
+for (const b of document.querySelectorAll("[data-el]")) {
+  b.addEventListener("click", () => { englishLevel = Number(b.dataset.el); store.set("bg-eng", englishLevel); renderLevelPanel(); });
+}
 for (const b of document.querySelectorAll("[data-sl]")) {
   b.addEventListener("click", () => { sudokuLevel = b.dataset.sl; renderLevelPanel(); });
 }
 
 function levelText(r) {
   if (r.game === "sudoku") return SUDOKU_LEVELS[r.level]?.label || "";
+  if (GAMES[r.game]?.english) return `${r.level}등급(${LEVEL_NAMES[r.level] || ""})`;
   return r.level ? `${r.level}단계` : "";
 }
 
@@ -205,6 +216,8 @@ $("start-btn").addEventListener("click", async () => {
   if (GAMES[selectedGame].leveled) {
     level = plannedLevel(selectedGame).level;
     levels[selectedGame] = level;
+  } else if (GAMES[selectedGame].english) {
+    level = englishLevel;
   } else {
     level = sudokuLevel;
   }
@@ -293,6 +306,7 @@ function playRound(r) {
 
   const finish = (detail) => {
     clearInterval(gameTimer);
+    keyHandler = null;
     const timeMs = Math.round(performance.now() - t0 + penalty);
     set(myResultRef, { name: myName, timeMs, ...detail, finishedAt: serverTimestamp() });
     $("my-result").textContent = `🎉 완료! ${fmtTime(timeMs)}`;
@@ -302,6 +316,14 @@ function playRound(r) {
   const addPenalty = ms => { penalty += ms; };
   if (r.game === "match") playMatch(r.seed, r.level, finish);
   else if (r.game === "sudoku") playSudoku(r.seed, r.level, addPenalty, finish);
+  else if (GAMES[r.game]?.english) {
+    const ctx = {
+      seed: r.seed, level: r.level, custom: null,
+      grid: $("game-grid"), controls: $("game-controls"), prompt: $("game-prompt"), progress: $("game-progress"),
+      toast, addPenalty, finish, setKeys: fn => { keyHandler = fn; }
+    };
+    ({ cross: playCrossword, anagram: playAnagram, wordle: playWordle })[r.game](ctx);
+  }
   else playSpeed(r.seed, r.level, addPenalty, finish);
 }
 
