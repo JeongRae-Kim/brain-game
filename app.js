@@ -386,6 +386,7 @@ function playRound(r) {
   show("view-game");
   $("game-controls").textContent = "";
   $("game-grid").className = "grid";
+  $("game-grid").style.maxWidth = "";
   const t0 = performance.now();
   let penalty = 0;
   clearInterval(gameTimer);
