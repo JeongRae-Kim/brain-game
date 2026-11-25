@@ -11,6 +11,7 @@ import {
 } from "./games.js";
 import { makeSudoku, SUDOKU_LEVELS, PEERS, ROW, COL } from "./sudoku.js";
 import { playCrossword, playAnagram, playWordle, playIdiom } from "./ui-english.js";
+import { playShooter } from "./ui-shooter.js";
 import { LEVEL_NAMES, WORDS } from "./words.js";
 import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
 import { IDIOMS, IDIOM_LEVELS, IDIOM_MIN, idiomList, parseIdioms, makeIdiomCross } from "./idioms.js";
@@ -207,6 +208,7 @@ function plannedLevel(game) {
   if (levelOverride[game] != null) return { ...s, level: levelOverride[game], manual: true };
   return s;
 }
+const fmtMed = v => (GAMES[selectedGame]?.scoreGame ? `${Math.round(v)}점` : fmtTime(v));
 const stars = n => "★".repeat(n) + "☆".repeat(LEVEL_MAX - n);
 
 function renderLevelPanel() {
@@ -221,9 +223,9 @@ function renderLevelPanel() {
     const p = plannedLevel(selectedGame);
     $("level-label").textContent = `${stars(p.level)} ${p.level}단계`;
     $("level-note").textContent = p.manual ? "방장이 직접 정한 단계예요"
-      : p.change > 0 ? `지난 판이 빨라서 한 단계 올렸어요 (중간 기록 ${fmtTime(p.median)})`
-      : p.change < 0 ? `지난 판이 오래 걸려서 한 단계 내렸어요 (중간 기록 ${fmtTime(p.median)})`
-      : p.median != null ? `지난 판 중간 기록 ${fmtTime(p.median)} · 단계 유지` : "기록이 빨라지면 자동으로 어려워져요";
+      : p.change > 0 ? `지난 판 기록이 좋아서 한 단계 올렸어요 (중간 기록 ${fmtMed(p.median)})`
+      : p.change < 0 ? `지난 판이 어려웠던 것 같아 한 단계 내렸어요 (중간 기록 ${fmtMed(p.median)})`
+      : p.median != null ? `지난 판 중간 기록 ${fmtMed(p.median)} · 단계 유지` : "기록이 좋아지면 자동으로 어려워져요";
     $("level-down").disabled = p.level <= LEVEL_MIN;
     $("level-up").disabled = p.level >= LEVEL_MAX;
   }
@@ -427,10 +429,13 @@ function playRound(r) {
     if (!end()) return;
     const timeMs = Math.round(performance.now() - t0 + penalty);
     set(myResultRef, { name: myName, timeMs, ...detail, finishedAt: serverTimestamp() });
-    $("my-result").textContent = detail?.partial
-      ? `⏰ 시간 안에 다 못 풀었어요 · ${detail.scoreText}`
-      : `🎉 완료! ${fmtTime(timeMs)}`;
-    sysChat(detail?.partial ? `${myName}님 시간 종료 · ${detail.scoreText}` : `${myName}님 완료! ${fmtTime(timeMs)}`);
+    $("my-result").textContent = detail?.scoreMode
+      ? `🚀 종료! ${detail.scoreText} (맞은 횟수 ${detail.wrong || 0})`
+      : detail?.partial
+        ? `⏰ 시간 안에 다 못 풀었어요 · ${detail.scoreText}`
+        : `🎉 완료! ${fmtTime(timeMs)}`;
+    sysChat(detail?.scoreMode ? `${myName}님 ${detail.scoreText}!`
+      : detail?.partial ? `${myName}님 시간 종료 · ${detail.scoreText}` : `${myName}님 완료! ${fmtTime(timeMs)}`);
     saveRecord(r, timeMs, detail || {});
     showSummary(summary);
     show("view-result");
@@ -454,6 +459,7 @@ function playRound(r) {
     ({ cross: playCrossword, anagram: playAnagram, wordle: playWordle })[r.game](ctx);
   }
   else if (r.game === "idiom") playIdiom(gameCtx(r, addPenalty, finish, setLimit, () => ended));
+  else if (r.game === "shooter") playShooter(gameCtx(r, addPenalty, finish, setLimit, () => ended));
   else playSpeed(r.seed, r.level, addPenalty, finish);
 }
 
@@ -718,7 +724,7 @@ function renderBoard(el, results) {
   const medals = ["🥇", "🥈", "🥉"];
   done.forEach((r, k) => {
     const extra = (r.hints ? ` 💡${r.hints}` : "") + (r.wrong ? ` ✗${r.wrong}` : "");
-    const main = r.partial ? `⏰ ${r.scoreText || r.score + "점"}` : fmtTime(r.timeMs);
+    const main = r.scoreMode ? `${r.score}점` : r.partial ? `⏰ ${r.scoreText || r.score + "점"}` : fmtTime(r.timeMs);
     el.appendChild(row(medals[k] || `${k + 1}위`, r.name, main + extra, r.uid === uid));
   });
   for (const r of playing) {
@@ -923,6 +929,7 @@ for (const b of document.querySelectorAll("[data-q]")) b.addEventListener("click
 const LEVEL_OPTS = {
   speed: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
   match: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
+  shooter: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
   sudoku: Object.entries(SUDOKU_LEVELS).map(([k, v]) => [k, v.label]),
   idiom: Object.entries(IDIOM_LEVELS).map(([k, v]) => [k, v.label]),
   cross: Object.keys(WORDS).map(n => [n, `${n}등급(${LEVEL_NAMES[n]})`]),
@@ -965,16 +972,19 @@ async function saveRecord(r, timeMs, detail) {
     });
   } catch { /* 규칙 미적용 등 */ }
   if (detail.partial) return;
+  const sm = !!detail.scoreMode;
+  const better = (a, b) => (sm ? (a.score ?? -1) > (b.score ?? -1) : a.timeMs < b.timeMs);
   const msgs = [];
   for (const [scope, label] of [["all", "역대"], [monthKey(), "이번 달"]]) {
     try {
       const path = `rooms/${ROOM}/best/${key}/${scope}`;
       const list = (await get(ref(db, path))).val() || {};
       const prev = list[uid];
-      if (prev && prev.timeMs <= timeMs) continue;
-      await set(ref(db, `${path}/${uid}`), { name: myName, timeMs, hints: detail.hints || 0, at: serverTimestamp() });
-      const ranked = { ...list, [uid]: { timeMs } };
-      const rank = Object.entries(ranked).sort((a, b) => a[1].timeMs - b[1].timeMs).findIndex(([id]) => id === uid) + 1;
+      const mine = { timeMs, score: detail.score ?? null };
+      if (prev && !better(mine, prev)) continue;
+      await set(ref(db, `${path}/${uid}`), { name: myName, timeMs, score: detail.score ?? null, hints: detail.hints || 0, at: serverTimestamp() });
+      const ranked = { ...list, [uid]: mine };
+      const rank = Object.entries(ranked).sort((a, b) => (better(a[1], b[1]) ? -1 : better(b[1], a[1]) ? 1 : 0)).findIndex(([id]) => id === uid) + 1;
       if (rank <= 3) msgs.push([label, rank]);
       else if (prev) msgs.push([label, 0]);
     } catch { /* 무시 */ }
@@ -985,7 +995,7 @@ async function saveRecord(r, timeMs, detail) {
     ? `🏆 새 기록! ${keyLabel(key)} ${top[0]} ${top[1]}위`
     : "👏 내 최고 기록을 새로 세웠어요";
   box.hidden = false;
-  if (top) sysChat(`🏆 ${myName}님 ${keyLabel(key)} ${top[0]} ${top[1]}위! ${fmtTime(timeMs)}`);
+  if (top) sysChat(`🏆 ${myName}님 ${keyLabel(key)} ${top[0]} ${top[1]}위! ${sm ? detail.score + "점" : fmtTime(timeMs)}`);
 }
 
 let hofScope = "all";
@@ -999,7 +1009,9 @@ function renderHof() {
   for (const b of document.querySelectorAll("[data-hs]")) b.classList.toggle("selected", b.dataset.hs === hofScope);
   const key = recKey($("hof-game").value, $("hof-level").value);
   const scope = hofScope === "all" ? "all" : monthKey();
-  const rows = Object.entries(bestData[key]?.[scope] || {}).sort((a, b) => a[1].timeMs - b[1].timeMs).slice(0, 3);
+  const sm = GAMES[$("hof-game").value]?.scoreGame;
+  const rows = Object.entries(bestData[key]?.[scope] || {})
+    .sort((a, b) => (sm ? (b[1].score ?? 0) - (a[1].score ?? 0) : a[1].timeMs - b[1].timeMs)).slice(0, 3);
   const el = $("hof-board");
   el.textContent = "";
   if (!rows.length) {
@@ -1011,7 +1023,7 @@ function renderHof() {
   }
   rows.forEach(([id, b], k) => {
     const li = row(["🥇", "🥈", "🥉"][k], `${b.name || "손님"} · ${fmtDate(b.at)}`,
-      fmtTime(b.timeMs) + (b.hints ? ` 💡${b.hints}` : ""), id === uid);
+      (sm ? `${b.score ?? 0}점` : fmtTime(b.timeMs)) + (b.hints ? ` 💡${b.hints}` : ""), id === uid);
     el.appendChild(li);
   });
 }
@@ -1051,44 +1063,49 @@ function stGame() {
 }
 
 function renderStats() {
-  const key = recKey($("st-game").value, $("st-level").value);
+  const g = $("st-game").value;
+  const sm = !!GAMES[g]?.scoreGame;
+  const key = recKey(g, $("st-level").value);
   const recs = myRecs().filter(x => x.key === key).sort((a, b) => (a.at || 0) - (b.at || 0));
   const done = recs.filter(x => !x.partial);
+  const val = x => (sm ? x.score ?? 0 : x.timeMs);
+  const fmtV = v => (sm ? `${Math.round(v)}점` : fmtTime(v));
   const sum = $("st-summary"), chart = $("st-chart"), list = $("st-list");
   chart.textContent = ""; list.textContent = "";
   if (!recs.length) { sum.textContent = "이 게임·난이도의 기록이 아직 없어요."; return; }
-  const best = done.length ? Math.min(...done.map(x => x.timeMs)) : null;
-  const avg = a => a.reduce((p, x) => p + x.timeMs, 0) / a.length;
+  const best = done.length ? (sm ? Math.max : Math.min)(...done.map(val)) : null;
+  const avg = a => a.reduce((p, x) => p + val(x), 0) / a.length;
   let trend = "";
   if (done.length >= 4) {
     const n = Math.min(3, Math.floor(done.length / 2));
     const first = avg(done.slice(0, n)), last = avg(done.slice(-n));
-    const pct = Math.round((1 - last / first) * 100);
-    trend = pct > 0 ? ` · 처음보다 ${pct}% 빨라졌어요 👍` : pct < 0 ? ` · 처음보다 ${-pct}% 느려졌어요` : " · 처음과 비슷해요";
+    const pct = Math.round(sm ? (last / Math.max(1, first) - 1) * 100 : (1 - last / first) * 100);
+    const good = sm ? "높아졌어요" : "빨라졌어요", bad = sm ? "낮아졌어요" : "느려졌어요";
+    trend = pct > 0 ? ` · 처음보다 ${pct}% ${good} 👍` : pct < 0 ? ` · 처음보다 ${-pct}% ${bad}` : " · 처음과 비슷해요";
   }
-  sum.textContent = `${recs.length}판 · 완주 ${done.length}판` + (best != null ? ` · 최고 ${fmtTime(best)}` : "") + trend;
-  if (done.length >= 2) drawChart(chart, done);
+  sum.textContent = `${recs.length}판` + (sm ? "" : ` · 완주 ${done.length}판`) + (best != null ? ` · 최고 ${fmtV(best)}` : "") + trend;
+  if (done.length >= 2) drawChart(chart, done, val, fmtV, sm);
   for (const x of recs.slice().reverse().slice(0, 20)) {
-    const li = row(fmtDate(x.at), x.partial ? `⏰ ${x.score ?? 0}점` : (x.timeMs === best ? "최고 기록 ⭐" : "완주"),
-      x.partial ? "시간 초과" : fmtTime(x.timeMs) + (x.hints ? ` 💡${x.hints}` : ""), false);
+    const li = row(fmtDate(x.at), x.partial ? `⏰ ${x.score ?? 0}점` : (val(x) === best ? "최고 기록 ⭐" : sm ? "기록" : "완주"),
+      x.partial ? "시간 초과" : fmtV(val(x)) + (x.hints ? ` 💡${x.hints}` : ""), false);
     list.appendChild(li);
   }
 }
 
 // 완주 기록 시간 그래프 (아래로 내려갈수록 빠름)
-function drawChart(box, recs) {
+function drawChart(box, recs, val = x => x.timeMs, fmtV = fmtTime, higherBetter = false) {
   const NS = "http://www.w3.org/2000/svg";
   const W = 340, H = 190, L = 52, R = 12, T = 14, B = 28;
   const svg = document.createElementNS(NS, "svg");
   svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
   svg.setAttribute("role", "img");
   svg.setAttribute("aria-label", "기록 변화 그래프");
-  const ts = recs.map(x => x.timeMs);
+  const ts = recs.map(val);
   let lo = Math.min(...ts), hi = Math.max(...ts);
   if (hi - lo < 1000) { lo -= 1000; hi += 1000; }
   const pad = (hi - lo) * 0.1; lo = Math.max(0, lo - pad); hi += pad;
   const x = i => L + (recs.length === 1 ? 0 : (i * (W - L - R)) / (recs.length - 1));
-  const yy = t => T + ((t - lo) / (hi - lo)) * (H - T - B);   // 빠른 기록일수록 위쪽
+  const yy = t => higherBetter ? H - B - ((t - lo) / (hi - lo)) * (H - T - B) : T + ((t - lo) / (hi - lo)) * (H - T - B);   // 좋은 기록일수록 위쪽
   const mk = (tag, attrs, text) => {
     const e = document.createElementNS(NS, tag);
     for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
@@ -1098,16 +1115,16 @@ function drawChart(box, recs) {
   };
   for (const t of [lo, (lo + hi) / 2, hi]) {
     mk("line", { x1: L, x2: W - R, y1: yy(t), y2: yy(t), stroke: "#eadfce", "stroke-width": 1 });
-    mk("text", { x: L - 6, y: yy(t) + 4, "text-anchor": "end", "font-size": 11, fill: "#6b6b6b" }, fmtTime(t).replace(".0초", "초"));
+    mk("text", { x: L - 6, y: yy(t) + 4, "text-anchor": "end", "font-size": 11, fill: "#6b6b6b" }, fmtV(t).replace(".0초", "초"));
   }
-  const pts = recs.map((r, i) => `${x(i)},${yy(r.timeMs)}`).join(" ");
+  const pts = recs.map((r, i) => `${x(i)},${yy(val(r))}`).join(" ");
   mk("polyline", { points: pts, fill: "none", stroke: "#e8743b", "stroke-width": 2.5, "stroke-linejoin": "round" });
-  const best = Math.min(...ts);
+  const best = higherBetter ? Math.max(...ts) : Math.min(...ts);
   recs.forEach((r, i) => {
-    mk("circle", { cx: x(i), cy: yy(r.timeMs), r: r.timeMs === best ? 6 : 4, fill: r.timeMs === best ? "#2f9e5b" : "#e8743b", stroke: "#fff", "stroke-width": 1.5 });
+    mk("circle", { cx: x(i), cy: yy(val(r)), r: val(r) === best ? 6 : 4, fill: val(r) === best ? "#2f9e5b" : "#e8743b", stroke: "#fff", "stroke-width": 1.5 });
   });
   mk("text", { x: L, y: H - 8, "font-size": 11, fill: "#6b6b6b" }, fmtDate(recs[0].at));
   mk("text", { x: W - R, y: H - 8, "text-anchor": "end", "font-size": 11, fill: "#6b6b6b" }, fmtDate(recs[recs.length - 1].at));
-  mk("text", { x: W - R, y: T - 2, "text-anchor": "end", "font-size": 11, fill: "#6b6b6b" }, "위로 갈수록 빠름 ↑");
+  mk("text", { x: W - R, y: T - 2, "text-anchor": "end", "font-size": 11, fill: "#6b6b6b" }, higherBetter ? "위로 갈수록 높은 점수 ↑" : "위로 갈수록 빠름 ↑");
   box.appendChild(svg);
 }

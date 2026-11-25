@@ -37,12 +37,13 @@ export const GAMES = {
   cross: { title: "🔤 영어 크로스워드", english: true },
   anagram: { title: "🔠 알파벳 맞추기", english: true },
   wordle: { title: "🟩 영어 워들", english: true },
-  idiom: { title: "📜 사자성어 크로스워드" }
+  idiom: { title: "📜 사자성어 크로스워드" },
+  shooter: { title: "🚀 우주 방어대", leveled: true, scoreGame: true }
 };
 
 export const LEVEL_MIN = 1;
 export const LEVEL_MAX = 5;
-export const DEFAULT_LEVEL = { speed: 2, match: 2 };
+export const DEFAULT_LEVEL = { speed: 2, match: 2, shooter: 2 };
 
 export const SPEED_TRIALS = 15;
 export const SPEED_PENALTY_MS = 2000;
@@ -110,6 +111,7 @@ export function median(nums) {
 
 export function levelThresholds(game, level) {
   if (game === "speed") return { fast: 20000, slow: 45000 };
+  if (game === "shooter") return { high: 1500 + level * 700, low: 500 + level * 300 };
   if (game === "match") {
     const pairs = (MATCH_LAYOUT[level] || MATCH_LAYOUT[2]).pairs;
     return { fast: pairs * 2500, slow: pairs * 6000 };
@@ -121,14 +123,18 @@ export function levelThresholds(game, level) {
 export function suggestLevel(game, lastRound, lastResults) {
   const base = lastRound?.levels?.[game] ?? DEFAULT_LEVEL[game] ?? 3;
   if (!lastRound || lastRound.game !== game) return { level: base, change: 0, median: null };
-  const times = Object.values(lastResults || {})
-    .map(r => r.timeMs)
+  const scoreGame = GAMES[game]?.scoreGame;
+  const vals = Object.values(lastResults || {})
+    .map(r => (scoreGame ? r.score : r.timeMs))
     .filter(t => typeof t === "number");
-  const med = median(times);
+  const med = median(vals);
   if (med === null) return { level: base, change: 0, median: null };
   const th = levelThresholds(game, base);
   let change = 0;
-  if (med < th.fast && base < LEVEL_MAX) change = 1;
+  if (scoreGame) {
+    if (med > th.high && base < LEVEL_MAX) change = 1;
+    else if (med < th.low && base > LEVEL_MIN) change = -1;
+  } else if (med < th.fast && base < LEVEL_MAX) change = 1;
   else if (med > th.slow && base > LEVEL_MIN) change = -1;
   return { level: base + change, change, median: med };
 }
@@ -146,6 +152,7 @@ export function rankResults(results) {
   const rows = Object.entries(results || {}).map(([uid, r]) => ({ uid, ...r }));
   // 다 푼 사람은 시간순, 시간 안에 못 푼 사람은 그 뒤에 점수순
   const done = rows.filter(r => typeof r.timeMs === "number").sort((a, b) =>
+    (a.scoreMode && b.scoreMode ? (b.score - a.score) || (a.wrong || 0) - (b.wrong || 0) : 0) ||
     ((a.partial ? 1 : 0) - (b.partial ? 1 : 0)) ||
     (a.partial ? (b.score - a.score) || (a.timeMs - b.timeMs) : a.timeMs - b.timeMs));
   const playing = rows.filter(r => typeof r.timeMs !== "number")
