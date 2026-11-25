@@ -31,6 +31,9 @@
         "round": {
           ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid"
         },
+        "settings": {
+          ".write": "auth != null && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
+        },
         "used": {
           ".write": "auth != null && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
         },

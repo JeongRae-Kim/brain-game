@@ -12,6 +12,10 @@ import {
 import { makeSudoku, SUDOKU_LEVELS, PEERS, ROW, COL } from "./sudoku.js";
 import { playCrossword, playAnagram, playWordle, playIdiom } from "./ui-english.js";
 import { playShooter } from "./ui-shooter.js";
+import { playBrick } from "./ui-brick.js";
+import { playBlocks } from "./ui-blocks.js";
+import { playMaze } from "./ui-maze.js";
+const ARCADE = { shooter: playShooter, brick: playBrick, blocks: playBlocks, maze: playMaze };
 import { LEVEL_NAMES, WORDS } from "./words.js";
 import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
 import { IDIOMS, IDIOM_LEVELS, IDIOM_MIN, idiomList, parseIdioms, makeIdiomCross } from "./idioms.js";
@@ -56,6 +60,7 @@ let custom = {};              // 위 목록을 읽어 둔 것
 let usedWords = {};           // 이 방에서 이미 나온 단어
 let handoverTo = null;
 let bestData = {};
+let hiddenGames = {};          // 방 설정: 숨긴 게임
 let keyHandler = null;        // 실제 키보드 입력 (PC)
 document.addEventListener("keydown", e => {
   if (e.target.closest?.("input, textarea, select")) return;   // 채팅·입력칸 타자는 게임으로 보내지 않음
@@ -128,6 +133,7 @@ function join() {
   });
   onValue(ref(db, `${base}/round`), s => { round = s.val(); onRound(); });
   onValue(ref(db, `${base}/used`), s => { usedWords = s.val() || {}; });
+  onValue(ref(db, `${base}/settings/hidden`), s => { hiddenGames = s.val() || {}; applyHidden(); });
   onValue(ref(db, `${base}/best`), s => { bestData = s.val() || {}; renderHof(); });
   onValue(ref(db, "custom"), s => { customRaw = s.val() || {}; custom = parseCustom(customRaw); });
   startChat();
@@ -430,7 +436,7 @@ function playRound(r) {
     const timeMs = Math.round(performance.now() - t0 + penalty);
     set(myResultRef, { name: myName, timeMs, ...detail, finishedAt: serverTimestamp() });
     $("my-result").textContent = detail?.scoreMode
-      ? `🚀 종료! ${detail.scoreText} (맞은 횟수 ${detail.wrong || 0})`
+      ? `🎮 종료! ${detail.scoreText} (${detail.wrongLabel || "맞은 횟수"} ${detail.wrong || 0})`
       : detail?.partial
         ? `⏰ 시간 안에 다 못 풀었어요 · ${detail.scoreText}`
         : `🎉 완료! ${fmtTime(timeMs)}`;
@@ -459,7 +465,7 @@ function playRound(r) {
     ({ cross: playCrossword, anagram: playAnagram, wordle: playWordle })[r.game](ctx);
   }
   else if (r.game === "idiom") playIdiom(gameCtx(r, addPenalty, finish, setLimit, () => ended));
-  else if (r.game === "shooter") playShooter(gameCtx(r, addPenalty, finish, setLimit, () => ended));
+  else if (ARCADE[r.game]) ARCADE[r.game](gameCtx(r, addPenalty, finish, setLimit, () => ended));
   else playSpeed(r.seed, r.level, addPenalty, finish);
 }
 
@@ -929,6 +935,9 @@ for (const b of document.querySelectorAll("[data-q]")) b.addEventListener("click
 const LEVEL_OPTS = {
   speed: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
   match: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
+  brick: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
+  blocks: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
+  maze: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
   shooter: [1, 2, 3, 4, 5].map(n => [String(n), `${n}단계`]),
   sudoku: Object.entries(SUDOKU_LEVELS).map(([k, v]) => [k, v.label]),
   idiom: Object.entries(IDIOM_LEVELS).map(([k, v]) => [k, v.label]),
@@ -1128,3 +1137,44 @@ function drawChart(box, recs, val = x => x.timeMs, fmtV = fmtTime, higherBetter 
   mk("text", { x: W - R, y: T - 2, "text-anchor": "end", "font-size": 11, fill: "#6b6b6b" }, higherBetter ? "위로 갈수록 높은 점수 ↑" : "위로 갈수록 빠름 ↑");
   box.appendChild(svg);
 }
+
+// ---------- ⚙️ 방 설정: 게임 보이기·숨기기 ----------
+function applyHidden() {
+  for (const b of document.querySelectorAll(".choice")) b.hidden = !!hiddenGames[b.dataset.game];
+  if (selectedGame && hiddenGames[selectedGame]) {
+    selectedGame = null;
+    for (const x of document.querySelectorAll(".choice")) x.classList.remove("selected");
+    $("start-btn").disabled = true;
+    renderLevelPanel();
+  }
+}
+$("settings-btn").addEventListener("click", () => {
+  const ul = $("set-list");
+  ul.textContent = "";
+  for (const [k, v] of Object.entries(GAMES)) {
+    const li = document.createElement("li");
+    const label = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.dataset.game = k;
+    cb.checked = !hiddenGames[k];
+    const span = document.createElement("span");
+    span.textContent = v.title;
+    label.append(cb, span);
+    li.appendChild(label);
+    ul.appendChild(li);
+  }
+  show("view-settings");
+});
+$("set-back").addEventListener("click", () => { show("view-lobby"); renderLobby(); });
+$("set-save").addEventListener("click", async () => {
+  const hidden = {};
+  for (const cb of document.querySelectorAll("#set-list input")) if (!cb.checked) hidden[cb.dataset.game] = true;
+  if (Object.keys(hidden).length >= Object.keys(GAMES).length) { toast("게임을 하나 이상 남겨 주세요"); return; }
+  try {
+    await set(ref(db, `rooms/${ROOM}/settings/hidden`), Object.keys(hidden).length ? hidden : null);
+    toast("저장했어요");
+    show("view-lobby");
+    renderLobby();
+  } catch { toast("방장이나 관리자만 바꿀 수 있어요"); }
+});

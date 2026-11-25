@@ -51,6 +51,9 @@
         <button class="btn choice" data-game="wordle">🟩 영어 워들<small>6번 안에 단어 추리</small></button>
         <button class="btn choice" data-game="idiom">📜 사자성어 크로스워드<small>뜻 보고 글자판으로 채우기</small></button>
         <button class="btn choice" data-game="shooter">🚀 우주 방어대<small>2분 동안 점수 겨루기</small></button>
+        <button class="btn choice" data-game="brick">🧱 벽돌 깨기<small>3분 동안 점수 겨루기</small></button>
+        <button class="btn choice" data-game="blocks">🟦 블록 쌓기<small>줄 채워 지우기 · 3분</small></button>
+        <button class="btn choice" data-game="maze">🍒 미로 먹기<small>과자 먹고 로봇 피하기 · 3분</small></button>
       </div>
       <div id="level-row" class="level-row" hidden>
         <div class="level-line">
@@ -88,6 +91,7 @@
         </div>
       </div>
       <button id="start-btn" class="btn primary" disabled>5초 뒤 다 함께 시작</button>
+      <button id="settings-btn" class="btn link-btn">⚙️ 방 설정 (게임 보이기·숨기기)</button>
     </div>
 
     <div id="guest-panel" class="card" hidden>
@@ -149,6 +153,17 @@
       <ul id="summary-list" class="summary"></ul>
     </div>
     <button id="back-btn" class="btn primary">대기실로</button>
+  </section>
+
+  <!-- 방 설정 -->
+  <section id="view-settings" class="view" hidden>
+    <div class="card">
+      <h2>⚙️ 방 설정</h2>
+      <p class="note">이 방 대기실에 보일 게임을 고르세요 (방마다 따로 저장돼요)</p>
+      <ul id="set-list" class="set-list"></ul>
+      <button id="set-save" class="btn primary">저장</button>
+    </div>
+    <button id="set-back" class="btn">대기실로</button>
   </section>
 
   <!-- 기록 변화 -->

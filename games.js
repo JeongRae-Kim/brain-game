@@ -38,12 +38,22 @@ export const GAMES = {
   anagram: { title: "🔠 알파벳 맞추기", english: true },
   wordle: { title: "🟩 영어 워들", english: true },
   idiom: { title: "📜 사자성어 크로스워드" },
-  shooter: { title: "🚀 우주 방어대", leveled: true, scoreGame: true }
+  shooter: { title: "🚀 우주 방어대", leveled: true, scoreGame: true },
+  brick: { title: "🧱 벽돌 깨기", leveled: true, scoreGame: true },
+  blocks: { title: "🟦 블록 쌓기", leveled: true, scoreGame: true },
+  maze: { title: "🍒 미로 먹기", leveled: true, scoreGame: true }
 };
 
 export const LEVEL_MIN = 1;
 export const LEVEL_MAX = 5;
-export const DEFAULT_LEVEL = { speed: 2, match: 2, shooter: 2 };
+export const DEFAULT_LEVEL = { speed: 2, match: 2, shooter: 2, brick: 2, blocks: 2, maze: 2 };
+// 점수 게임: 지난 판 중간 점수가 high보다 높으면 한 단계 올리고 low보다 낮으면 내림
+const SCORE_TH = {
+  shooter: l => ({ high: 1500 + l * 700, low: 500 + l * 300 }),
+  brick: l => ({ high: 1800 + l * 600, low: 600 + l * 250 }),
+  blocks: l => ({ high: 1500 + l * 800, low: 400 + l * 200 }),
+  maze: l => ({ high: 2000 + l * 700, low: 700 + l * 300 })
+};
 
 export const SPEED_TRIALS = 15;
 export const SPEED_PENALTY_MS = 2000;
@@ -111,7 +121,7 @@ export function median(nums) {
 
 export function levelThresholds(game, level) {
   if (game === "speed") return { fast: 20000, slow: 45000 };
-  if (game === "shooter") return { high: 1500 + level * 700, low: 500 + level * 300 };
+  if (SCORE_TH[game]) return SCORE_TH[game](level);
   if (game === "match") {
     const pairs = (MATCH_LAYOUT[level] || MATCH_LAYOUT[2]).pairs;
     return { fast: pairs * 2500, slow: pairs * 6000 };
