@@ -15,6 +15,7 @@ import { playShooter } from "./ui-shooter.js";
 import { playBrick } from "./ui-brick.js";
 import { playBlocks } from "./ui-blocks.js";
 import { playMaze } from "./ui-maze.js";
+import { openMightyPractice } from "./ui-mighty.js";
 const ARCADE = { shooter: playShooter, brick: playBrick, blocks: playBlocks, maze: playMaze };
 import { LEVEL_NAMES, WORDS } from "./words.js";
 import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
@@ -1177,4 +1178,17 @@ $("set-save").addEventListener("click", async () => {
     show("view-lobby");
     renderLobby();
   } catch { toast("방장이나 관리자만 바꿀 수 있어요"); }
+});
+
+// ---------- 🃏 마이티 연습 ----------
+$("mighty-btn").addEventListener("click", () => {
+  show("view-mighty");
+  openMightyPractice({
+    view: $("view-mighty"), myName, toast,
+    onExit: () => { show("view-lobby"); renderLobby(); },
+    onMatchEnd: (st, me) => {
+      const rank = st.players.map((_, i) => i).sort((a, b) => st.scores[b] - st.scores[a]).indexOf(me) + 1;
+      sysChat(`🃏 ${myName}님 마이티 연습 ${rank}위 (${st.scores[me]}점)`);
+    }
+  });
 });
