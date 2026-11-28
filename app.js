@@ -24,7 +24,11 @@ import { IDIOMS, IDIOM_LEVELS, IDIOM_MIN, idiomList, parseIdioms, makeIdiomCross
 
 // ---------- 기본 ----------
 const params = new URLSearchParams(location.search);
-const ROOM = (params.get("room") || "family").replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 30) || "family";
+// 열 수 있는 방 (보안 규칙 database.rules.json의 목록과 같아야 함)
+export const ALLOWED_ROOMS = ["family", "lee", "ryu", "park", "taean-plant"];
+const ROOM_ASKED = (params.get("room") || "family").trim().toLowerCase();
+const ROOM_OK = ALLOWED_ROOMS.includes(ROOM_ASKED);
+const ROOM = ROOM_OK ? ROOM_ASKED : "family";
 const COUNTDOWN_MS = 5000;
 const JOIN_WINDOW_MS = 10 * 60 * 1000; // 시작 후 10분까지는 늦게 와도 참여 가능
 
@@ -85,6 +89,13 @@ main().catch(err => {
 });
 
 async function main() {
+  if (!ROOM_OK) {
+    show("view-setup");
+    $("room-label").textContent = "방: " + ROOM_ASKED;
+    $("view-setup").querySelector(".big").textContent = "열 수 없는 방이에요";
+    $("view-setup").querySelector("p:last-child").textContent = "받은 링크가 맞는지 확인해 주세요. 링크를 보낸 분께 다시 물어봐 주세요.";
+    return;
+  }
   if (!firebaseConfig.apiKey || !firebaseConfig.databaseURL) { show("view-setup"); return; }
   const app = initializeApp(firebaseConfig);
   db = getDatabase(app);

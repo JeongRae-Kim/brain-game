@@ -17,44 +17,44 @@
     },
     "rooms": {
       "$room": {
-        ".read": "auth != null",
+        ".read": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant')",
         "players": {
           "$uid": {
-            ".write": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && auth.uid == $uid",
             "name": { ".validate": "newData.isString() && newData.val().length <= 10" }
           }
         },
         "host": {
-          ".write": "auth != null && (!data.exists() || data.val() == auth.uid || root.child('rooms').child($room).child('players').child(data.val()).child('online').val() != true)",
+          ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && (!data.exists() || data.val() == auth.uid || root.child('rooms').child($room).child('players').child(data.val()).child('online').val() != true)",
           ".validate": "!newData.exists() || newData.val() == auth.uid || data.val() == auth.uid"
         },
         "round": {
-          ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid"
+          ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && root.child('rooms').child($room).child('host').val() == auth.uid"
         },
         "settings": {
-          ".write": "auth != null && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
+          ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
         },
         "used": {
-          ".write": "auth != null && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
+          ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
         },
         "mighty": {
           "seats": {
             "$i": {
-              ".write": "auth != null && ((!data.exists() && newData.val() == auth.uid) || (data.val() == auth.uid && !newData.exists()) || root.child('rooms').child($room).child('host').val() == auth.uid)"
+              ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && ((!data.exists() && newData.val() == auth.uid) || (data.val() == auth.uid && !newData.exists()) || root.child('rooms').child($room).child('host').val() == auth.uid)"
             }
           },
-          "setup": { ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid" },
-          "game": { ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid" },
+          "setup": { ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && root.child('rooms').child($room).child('host').val() == auth.uid" },
+          "game": { ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && root.child('rooms').child($room).child('host').val() == auth.uid" },
           "actions": {
-            ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid",
+            ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && root.child('rooms').child($room).child('host').val() == auth.uid",
             "$id": {
-              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || (!newData.exists() && root.child('rooms').child($room).child('host').val() == auth.uid))"
+              ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && ((!data.exists() && newData.child('uid').val() == auth.uid) || (!newData.exists() && root.child('rooms').child($room).child('host').val() == auth.uid))"
             }
           }
         },
         "chat": {
           "$msg": {
-            ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || !newData.exists())",
+            ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && ((!data.exists() && newData.child('uid').val() == auth.uid) || !newData.exists())",
             ".validate": "!newData.exists() || (newData.child('text').isString() && newData.child('text').val().length <= 100 && newData.child('name').isString() && newData.child('name').val().length <= 10)"
           }
         },
@@ -62,7 +62,7 @@
           "$key": {
             "$scope": {
               "$uid": {
-                ".write": "auth != null && auth.uid == $uid",
+                ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && auth.uid == $uid",
                 ".validate": "newData.child('timeMs').isNumber() && newData.child('name').isString() && newData.child('name').val().length <= 10"
               }
             }
@@ -70,13 +70,13 @@
         },
         "history": {
           "$uid": {
-            ".write": "auth != null && auth.uid == $uid"
+            ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && auth.uid == $uid"
           }
         },
         "results": {
           "$roundId": {
             "$uid": {
-              ".write": "auth != null && auth.uid == $uid",
+              ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && auth.uid == $uid",
               "name": { ".validate": "newData.isString() && newData.val().length <= 10" },
               "timeMs": { ".validate": "newData.isNumber() && newData.val() > 0" }
             }
