@@ -137,7 +137,7 @@ function join() {
     await update(meRef, { name: myName, online: true, seen: serverTimestamp() });
   });
 
-  onValue(ref(db, `${base}/players`), s => { players = s.val() || {}; renderLobby(); });
+  onValue(ref(db, `${base}/players`), s => { players = s.val() || {}; renderLobby(); mightyNet?.playersChanged(); });
   onValue(ref(db, `${base}/host`), s => {
     const was = hostUid;
     hostUid = s.val();
@@ -153,7 +153,7 @@ function join() {
   onValue(ref(db, "custom"), s => { customRaw = s.val() || {}; custom = parseCustom(customRaw); });
   startChat();
   mightyNet = setupMightyNet({
-    db, ref, set, push, onValue, get, ROOM, toast, sysChat,
+    db, ref, set, push, onValue, onDisconnect, get, ROOM, toast, sysChat,
     uid: () => uid, myName: () => myName, isHost: () => hostUid === uid, playersOf: () => players,
     show, onView: () => { show("view-lobby"); renderLobby(); }
   });

@@ -182,7 +182,7 @@ export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) 
 // ---------------- 탁자 그리기 ----------------
 // getState(): 지금 상태, me: 내 자리(-1 = 구경), submit(action): 행동 보내기
 // onIdle(): 트릭 결과 보여 주기가 끝났을 때 (연습판 컴퓨터 진행용)
-export function runTable({ view, getState, me, submit, toast, multi, onIdle, onExit, onMatchEnd, header }) {
+export function runTable({ view, getState, me, submit, toast, multi, onIdle, onExit, onMatchEnd, header, onJoin }) {
   let picks = [], newTrump = null, pendingCard = null, showTrick = null, lastShown = null;
   let bidSuit = null, bidN = null, saved = false, friendKnown = false, lastPhase = null;
   let flash = null, flashTimer = null, pauseTimer = null;
@@ -283,6 +283,12 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
       d.appendChild(el("small", "taken", st.taken[p].map(M.cardText).join(" ")));
     }
     d.appendChild(el("small", "tot", `총점 ${st.scores[p]}`));
+    if (st.players[p].away) d.appendChild(el("small", "away", "🤖 컴퓨터가 대신"));
+    if (me < 0 && onJoin && st.players[p].ai && st.phase !== "matchEnd") {
+      const j = el("button", "btn small-label mt-join", st.players[p].away ? "이 자리 이어받기" : "컴퓨터 대신 앉기");
+      j.addEventListener("click", () => onJoin(p));
+      d.appendChild(j);
+    }
     return d;
   }
   function infoBar() {
