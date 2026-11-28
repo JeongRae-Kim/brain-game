@@ -1,7 +1,7 @@
 // 🃏 마이티 화면 — 1단계: 나 + 컴퓨터 4명 연습판
 import * as M from "./mighty.js";
 
-const AI_DELAY = 750, TRICK_PAUSE = 1300;
+const AI_DELAY = 750, BID_DELAY = 1200, TRICK_PAUSE = 1300;
 const BOT_NAMES = ["컴퓨터 가", "컴퓨터 나", "컴퓨터 다", "컴퓨터 라"];
 
 function el(tag, cls, text) {
@@ -75,6 +75,8 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
   let showTrick = null;          // 끝난 판 잠깐 보여 주기
   let bidSuit = null, bidN = null;
   let lastShown = null, saved = false;
+  let flash = null;              // 방금 일어난 일 (공약 단계에서 크게 보여 줌)
+  const setFlash = text => { flash = { text, until: Date.now() + 2500 }; };
 
   const root = el("div", "mt");
   view.textContent = "";
@@ -102,10 +104,17 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     if (showTrick) return;
     const p = M.whoActs(st);
     if (p >= 0 && st.players[p].ai) {
+      const bidding = st.phase === "bid";
       timer = setTimeout(() => {
+        const before = bidding ? JSON.stringify(st.bids[p]) : null;
         try { M.aiStep(st, p); } catch (e) { console.error(e); }
+        if (bidding && st.phase === "bid") {
+          const b = st.bids[p];
+          if (b && b !== "pass" && JSON.stringify(b) !== before) setFlash(`방금 ${st.players[p].name}가 ${M.bidText(b)}으로 올렸어요`);
+          else if (b === "pass") setFlash(`${st.players[p].name}: 패스`);
+        }
         afterChange();
-      }, AI_DELAY);
+      }, bidding ? BID_DELAY : AI_DELAY);
     }
   }
 
@@ -233,6 +242,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     if (st.phase === "matchEnd") return matchEndPanel(box);
     if (showTrick) return box;
     if (actor !== me) {
+      if (st.phase === "bid" && flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
       if (actor >= 0) box.appendChild(el("p", "note", `${st.players[actor].name} 차례…`));
       return box;
     }
@@ -244,6 +254,11 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
         return null;
       };
       if (bidN == null || !M.bidOk(st, { suit: bidSuit, n: bidN })) bidN = minFor(bidSuit);
+      const { who } = M.highestBid(st);
+      if (flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
+      box.appendChild(el("p", "mt-status", best
+        ? `지금 최고: ${st.players[who].name} ${M.bidText(best)}${who === me ? " (나)" : ""} · 이기려면 더 높게`
+        : "아직 아무도 안 불렀어요 · 13장부터 (노기루다 12장부터)"));
       box.appendChild(el("p", "note", "내 차례: 공약을 부르거나 패스"));
       const suits = el("div", "mt-suits");
       for (const s of [...M.SUITS, "N"]) {
@@ -261,7 +276,10 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
       const row = el("div", "row");
       const call = el("button", "btn primary", "부르기");
       call.disabled = !bidN;
-      call.addEventListener("click", () => act(() => M.applyBid(st, me, { suit: bidSuit, n: bidN })));
+      call.addEventListener("click", () => {
+        const bid = { suit: bidSuit, n: bidN };
+        act(() => { M.applyBid(st, me, bid); setFlash(`${M.bidText(bid)}으로 불렀어요`); toast(`${M.bidText(bid)}으로 불렀어요`); });
+      });
       const pass = el("button", "btn", "패스");
       pass.addEventListener("click", () => act(() => M.applyBid(st, me, "pass")));
       row.append(call, pass);
