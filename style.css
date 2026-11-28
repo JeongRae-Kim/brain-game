@@ -337,3 +337,11 @@ body.no-chat-fab .chat-fab { display: none; }
 #view-mighty { padding-bottom: 90px; }
 .mt-flash { margin: 0 0 6px; padding: 8px 10px; border-radius: 10px; background: #fff1cc; color: #7a4b00; font-weight: 800; text-align: center; font-size: 17px; }
 .mt-status { margin: 0 0 6px; text-align: center; font-weight: 700; font-size: 16px; }
+/* 마이티 편 색깔: 주공 금색 · 프렌드 연두색 */
+.mt-seat.gov-d { background: #fff3c4; border-color: #e0b100; }
+.mt-seat.gov-f { background: #dff5d8; border-color: #4fae5c; }
+.mt-seat.secret-f { border-style: dashed; border-color: #8ccf8a; background: #f2fbef; }
+.mt-seat.turn.gov-d, .mt-seat.turn.gov-f { box-shadow: 0 0 0 3px var(--accent); }
+.mt-played.gov-d .mc { box-shadow: 0 0 0 3px #e0b100; }
+.mt-played.gov-f .mc { box-shadow: 0 0 0 3px #4fae5c; }
+.mt-played.win.gov-d .mc, .mt-played.win.gov-f .mc { outline: 3px solid #ffd34d; outline-offset: 2px; }

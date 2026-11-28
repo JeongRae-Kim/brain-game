@@ -76,7 +76,12 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
   let bidSuit = null, bidN = null;
   let lastShown = null, saved = false;
   let flash = null;              // 방금 일어난 일 (공약 단계에서 크게 보여 줌)
-  const setFlash = text => { flash = { text, until: Date.now() + 2500 }; };
+  let flashTimer = null;
+  const setFlash = text => {
+    flash = { text, until: Date.now() + 2600 };
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => { if (root.isConnected) render(); }, 2700);
+  };
 
   const root = el("div", "mt");
   view.textContent = "";
@@ -86,7 +91,25 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     try { fn(); } catch (e) { toast(e.message); return; }
     afterChange();
   }
+  let friendKnown = false, lastPhase = null;
+  function teamClass(p) {
+    if (!st.contract) return "";
+    if (p === st.contract.declarer) return " gov-d";
+    const f = st.friend;
+    if (f && f.revealed && f.idx === p) return " gov-f";
+    return "";
+  }
   function afterChange() {
+    // 프렌드가 막 밝혀졌으면 크게 알림
+    const f = st.friend;
+    if (f && f.revealed && !friendKnown && st.phase !== "bid") {
+      friendKnown = true;
+      setFlash(f.idx == null ? "프렌드 없이 주공 혼자예요" : `🤝 ${st.players[f.idx].name}님이 프렌드!`);
+    }
+    if (!f) friendKnown = false;
+    // 공약이 끝나면 공약 안내는 지움
+    if (lastPhase === "bid" && st.phase !== "bid" && !(f && f.revealed)) flash = null;
+    lastPhase = st.phase;
     // 판이 막 끝났으면 잠깐 보여 줌
     if (st.lastTrick && st.lastTrick !== lastShown) {
       lastShown = st.lastTrick;
@@ -110,7 +133,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
         try { M.aiStep(st, p); } catch (e) { console.error(e); }
         if (bidding && st.phase === "bid") {
           const b = st.bids[p];
-          if (b && b !== "pass" && JSON.stringify(b) !== before) setFlash(`방금 ${st.players[p].name}가 ${M.bidText(b)}으로 올렸어요`);
+          if (b && b !== "pass" && JSON.stringify(b) !== before) setFlash(`방금 ${st.players[p].name}님이 ${M.bidText(b)}으로 올렸어요`);
           else if (b === "pass") setFlash(`${st.players[p].name}: 패스`);
         }
         afterChange();
@@ -149,7 +172,8 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     return "";
   }
   function seat(p, mine = false) {
-    const d = el("div", "mt-seat" + (M.whoActs(st) === p ? " turn" : "") + (mine ? " mine" : ""));
+    const secret = p === me && st.friend?.type === "card" && !st.friend.revealed && st.hands[me].includes(st.friend.card);
+    const d = el("div", "mt-seat" + (M.whoActs(st) === p ? " turn" : "") + (mine ? " mine" : "") + teamClass(p) + (secret ? " secret-f" : ""));
     d.appendChild(el("b", null, `${role(p)} ${st.players[p].name}${mine ? " (나)" : ""}`));
     const b = st.bids?.[p];
     let sub = `카드 ${st.hands[p].length}`;
@@ -187,7 +211,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     else if (st.trick?.leadSuit) d.appendChild(el("div", "mt-lead", `${M.SUIT_SYM[st.trick.leadSuit]} 판`));
     const row = el("div", "mt-trick");
     for (const { p, card } of cards) {
-      const w = el("div", "mt-played" + (showTrick && p === showTrick.src.winner ? " win" : ""));
+      const w = el("div", "mt-played" + (showTrick && p === showTrick.src.winner ? " win" : "") + teamClass(p));
       w.appendChild(cardEl(card, { small: true }));
       w.appendChild(el("small", null, st.players[p].name));
       row.appendChild(w);
@@ -241,6 +265,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     if (st.phase === "dealEnd") return dealEndPanel(box);
     if (st.phase === "matchEnd") return matchEndPanel(box);
     if (showTrick) return box;
+    if (st.phase !== "bid" && flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
     if (actor !== me) {
       if (st.phase === "bid" && flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
       if (actor >= 0) box.appendChild(el("p", "note", `${st.players[actor].name} 차례…`));
