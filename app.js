@@ -161,7 +161,8 @@ function join() {
     db, ref, set, push, onValue, onDisconnect, get, ROOM, toast, sysChat,
     uid: () => uid, myName: () => myName, isHost: () => hostUid === uid, playersOf: () => players,
     show, onView: () => { show("view-lobby"); renderLobby(); },
-    invite: (text, button) => sendInvite({ text, url: inviteUrl(ROOM, "mighty"), button, toast }),
+    invite: text => sendInvite({ text, url: inviteUrl(ROOM, "mighty"), toast, buttons: [
+      { title: "탁자로 가기", url: inviteUrl(ROOM, "mighty") }, { title: "👀 구경하기", url: inviteUrl(ROOM, "watch") }] }),
     saveReplay
   });
   initReplay({ db, ref, push, get, set, ROOM, uid: () => uid, myName: () => myName, toast, show,
@@ -171,7 +172,8 @@ function join() {
 
   show("view-lobby");
   // 초대장으로 들어오면 바로 마이티 탁자로
-  if (params.get("go") === "mighty") setTimeout(() => mightyNet.open(), 600);
+  if (params.get("go") === "mighty" || params.get("go") === "watch") setTimeout(() => mightyNet.open(), 600);
+  if (params.get("go") === "watch") setTimeout(() => toast("구경 중이에요 · 같이 치려면 컴퓨터 자리의 '🙋 앉기'"), 1500);
 }
 
 function hostOnline() {

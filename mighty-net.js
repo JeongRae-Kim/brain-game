@@ -4,6 +4,8 @@
 // - 진행 중에도 컴퓨터 자리에 들어와 이어서 칠 수 있음
 // - 게임 중 연결이 1분 넘게 끊기면 컴퓨터가 대신 치고, 돌아오면 다시 넘겨줌
 import * as M from "./mighty.js";
+import { commentary } from "./spectate.js";
+import { buildReplay, openReplay } from "./replay.js";
 import {
   runTable, applyAction, aiMove, optionsBox, rulesBox, el, BOT_NAMES, SPEEDS, DEFAULT_OPTS, lengthOf, lengthText
 } from "./ui-mighty.js";
@@ -19,6 +21,8 @@ export function setupMightyNet(deps) {
   let game = null, st = null;           // game: Firebase 원본, st: 펼친 상태
   let viewOpen = false, tbl = null, tblKey = null;
   let seatGuard = null;                 // 시작 전 내 자리: 연결이 끊기면 자동으로 비움
+  let specLog = [], specPrev = null;    // 관전자 해설 (이 기기에서만 쌓임)
+  let lastReplay = null, replayOpen = false, watchers = {}, watching = false;
 
   const me = () => deps.uid();
   const online = id => deps.playersOf()[id]?.online === true;
@@ -53,6 +57,13 @@ export function setupMightyNet(deps) {
     let parsed = null;
     try { parsed = game?.json ? JSON.parse(game.json) : null; } catch { parsed = null; }
     const wasPlaying = !!st;
+    // 관전자 해설: 이전 상태와 비교해 새 문장 쌓기
+    if (parsed) {
+      for (const t of commentary(specPrev, parsed)) specLog.push(t);
+      if (specLog.length > 80) specLog = specLog.slice(-80);
+      if (parsed.phase === "dealEnd" && parsed.dealResult) { try { lastReplay = buildReplay(parsed, "table"); } catch { /* 예전 상태 */ } }
+    } else { specLog = []; }
+    specPrev = parsed;
     st = parsed;
     guardMySeat();
     refreshRunner();
@@ -61,10 +72,26 @@ export function setupMightyNet(deps) {
     applyChatRule();
     // 내가 탁자에 있으면 시작될 때 탁자로 자동 이동
     if (!wasPlaying && st && st.phase !== "matchEnd" && mySeat() >= 0 && !viewOpen) open();
-    if (viewOpen) {
+    if (viewOpen && !replayOpen) {
       if (st) drawTable(); else renderSetup();
     }
+    updateWatching();
   });
+  // 구경하는 사람 수
+  onValue(ref(db, `${base}/watch`), s => { watchers = s.val() || {}; drawWatchers(); });
+  function updateWatching() {
+    const want = viewOpen && !!st && mySeat() < 0 && !replayOpen;
+    if (want === watching) return;
+    watching = want;
+    const r = ref(db, `${base}/watch/${me()}`);
+    if (want) { set(r, true).catch(() => {}); onDisconnect(r).remove().catch(() => {}); }
+    else { set(r, null).catch(() => {}); onDisconnect(r).cancel().catch(() => {}); }
+  }
+  function drawWatchers() {
+    const n = Object.keys(watchers).filter(id => online(id)).length;
+    const elw = document.querySelector("#view-mighty .mt-watch");
+    if (elw) { elw.textContent = n ? `👀 ${n}명 구경 중` : ""; elw.hidden = !n; }
+  }
 
   // 시작 전에는 연결이 끊기면 내 자리를 비우고, 게임 중에는 자리를 지킴
   function guardMySeat() {
@@ -97,11 +124,15 @@ export function setupMightyNet(deps) {
 
   function open() {
     viewOpen = true;
+    replayOpen = false;
     deps.show("view-mighty");
     if (st) drawTable(); else renderSetup();
+    updateWatching();
   }
   function close() {
     viewOpen = false;
+    replayOpen = false;
+    updateWatching();
     tbl = null; tblKey = null;
     deps.onView("lobby");
   }
@@ -184,10 +215,11 @@ export function setupMightyNet(deps) {
     const view = document.getElementById("view-mighty");
     const myIdx = mySeat();
     const key = `${st.seed}-${me()}-${myIdx}`;
-    if (tbl && tblKey === key) { tbl.update(); return; }
+    if (tbl && tblKey === key) { tbl.update(); drawSpec(); return; }
     tblKey = key;
     const header = el("div", "mt-head");
     header.appendChild(el("span", null, myIdx >= 0 ? "🃏 마이티 탁자" : "🃏 마이티 탁자 (구경 중)"));
+    header.appendChild(el("span", "mt-watch"));
     if (canManage()) {
       const stop = el("button", "btn link-btn", "탁자 닫기");
       let armed = false;
@@ -222,6 +254,36 @@ export function setupMightyNet(deps) {
       again.addEventListener("click", endTable);
       view.appendChild(again);
     }
+    const spec = el("div", "mt-spec");
+    view.appendChild(spec);
+    drawSpec();
+    drawWatchers();
+  }
+
+  // 관전자 칸: 실시간 해설 + 판 끝 복기 (앉은 사람에게는 해설을 보여 주지 않음)
+  function drawSpec() {
+    const box = document.querySelector("#view-mighty .mt-spec");
+    if (!box || !st) return;
+    box.textContent = "";
+    const spectator = mySeat() < 0;
+    const showRp = lastReplay && (spectator || st.phase === "matchEnd");
+    if (showRp) {
+      const b = el("button", "btn primary", st.phase === "dealEnd" || st.phase === "matchEnd" ? "📜 이 판 복기 보기 (다섯 명 패 + 해설)" : "📜 지난 판 복기 보기");
+      b.addEventListener("click", () => {
+        replayOpen = true; updateWatching();
+        openReplay(document.getElementById("view-mighty"), lastReplay, {
+          closeLabel: "탁자로 돌아가기",
+          onClose: () => { replayOpen = false; tblKey = null; tbl = null; drawTable(); updateWatching(); }
+        });
+      });
+      box.appendChild(b);
+    }
+    if (!spectator || st.opts?.specComment === false) return;
+    box.appendChild(el("h3", null, "🎙️ 관전 해설"));
+    const list = el("div", "mt-spec-list");
+    for (const t of specLog.slice(-14).reverse()) list.appendChild(el("div", null, t));
+    if (!specLog.length) list.appendChild(el("div", "note", "카드가 나오면 해설이 여기에 쌓여요"));
+    box.appendChild(list);
   }
 
   // 카톡으로 초대
@@ -232,12 +294,12 @@ export function setupMightyNet(deps) {
       let text;
       if (playing()) {
         const free = st.players.filter(p => p.ai).length;
-        text = `🃏 ${me_}님이 마이티 탁자에 초대했어요!\n지금 ${st.dealNo}판째 진행 중` + (free ? ` · 컴퓨터 자리 ${free}개 (들어와서 '컴퓨터 대신 앉기')` : "");
+        text = `🃏 ${me_}님이 마이티 탁자에 초대했어요!\n지금 ${st.dealNo}판째 진행 중` + (free ? ` · 컴퓨터 자리 ${free}개 (들어와서 '🙋 앉기')` : "");
       } else {
         const n = seats.filter(Boolean).length;
         text = `🃏 ${me_}님이 마이티 탁자에 초대했어요!\n빈자리 ${5 - n}개 · 들어와서 자리에 앉아 주세요`;
       }
-      deps.invite?.(text, "탁자로 가기");
+      deps.invite?.(text + "\n(구경만 해도 돼요 — 관전 해설이 나와요)");
     });
     return b;
   }

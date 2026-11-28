@@ -8,7 +8,7 @@ export const SPEEDS = {
 };
 export const DEFAULT_OPTS = {
   speed: "slow", aiLevel: "mid", manualNext: true, showTaken: false, dealEndCards: false,
-  aiSignal: false, mightyFixed: false, chatQuick: false
+  aiSignal: false, mightyFixed: false, chatQuick: false, specComment: true
 };
 const OPT_LABELS = [
   ["manualNext", "트릭마다 '다음 ▶' 눌러 넘기기", "연습판만 · 다섯 장을 천천히 확인"],
@@ -16,7 +16,8 @@ const OPT_LABELS = [
   ["dealEndCards", "판 끝 점수표에 먹은 카드 목록", ""],
   ["aiSignal", "컴퓨터가 '3·6·9 = 조커 없음' 신호 쓰기", "컴퓨터 프렌드가 신호를 내고 컴퓨터 주공이 조커 콜"],
   ["mightyFixed", "마이티는 언제나 ♠A", "끄면: 기루다가 ♠일 때 ◆A가 마이티"],
-  ["chatQuick", "마이티 중 대화는 빠른 답장만", "여러 사람 탁자만 · 패 이야기 막기"]
+  ["chatQuick", "마이티 중 대화는 빠른 답장만", "여러 사람 탁자만 · 패 이야기 막기"],
+  ["specComment", "구경하는 사람에게 해설 보여 주기", "여러 사람 탁자만 · 앉은 사람에게는 안 보여요"]
 ];
 export const BOT_NAMES = ["컴퓨터 가", "컴퓨터 나", "컴퓨터 다", "컴퓨터 라", "컴퓨터 마"];
 
@@ -89,7 +90,7 @@ export function optionsBox(state, { multi = false, onChange } = {}) {
   const ul = el("ul", "set-list");
   for (const [k, label, hint] of OPT_LABELS) {
     if (multi && k === "manualNext") continue;
-    if (!multi && k === "chatQuick") continue;
+    if (!multi && (k === "chatQuick" || k === "specComment")) continue;
     const li = el("li");
     const lab = el("label");
     const cb = el("input");
@@ -295,7 +296,7 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
     d.appendChild(el("small", "tot", `총점 ${st.scores[p]}`));
     if (st.players[p].away) d.appendChild(el("small", "away", "🤖 컴퓨터가 대신"));
     if (me < 0 && onJoin && st.players[p].ai && st.phase !== "matchEnd") {
-      const j = el("button", "btn small-label mt-join", st.players[p].away ? "이 자리 이어받기" : "컴퓨터 대신 앉기");
+      const j = el("button", "btn small-label mt-join", st.players[p].away ? "🙋 이어받기" : "🙋 앉기");
       j.addEventListener("click", () => onJoin(p));
       d.appendChild(j);
     }

@@ -19,7 +19,7 @@ export const mightyCard = st => (st.opts?.mightyFixed ? "S14" : mightyOf(st.trum
 const isSignalCard = c => c !== "JK" && [3, 6, 9].includes(rankOf(c));
 export const bidText = b => (b ? `${SUIT_SYM[b.suit]} ${b.n}장` : "");
 
-function fullDeck() {
+export function fullDeck() {
   const d = ["JK"];
   for (const s of SUITS) for (let r = 2; r <= 14; r++) d.push(s + r);
   return d;
@@ -456,7 +456,7 @@ export const aiLevelOf = (st, p) => st.aiSeats?.[p] || st.opts?.aiLevel || "mid"
 // ---------------------------------------------------------------------
 // 중급: 나온 카드 기억 + 편 판단 + 자리 순서를 보고 냄 (다른 사람 패는 보지 않음)
 // ---------------------------------------------------------------------
-function memoryOf(st, p) {
+export function memoryOf(st, p) {
   const played = st.played || [];
   const seen = new Set(played.map(x => x.card));
   for (const c of st.hands[p]) seen.add(c);
@@ -484,7 +484,7 @@ function memoryOf(st, p) {
 }
 
 // 각 사람이 내 편인지: "ally" / "enemy" / "unknown"(숨은 프렌드일 수도 있는 사람)
-function sidesOf(st, p) {
+export function sidesOf(st, p) {
   const d = st.contract.declarer, f = st.friend;
   const iAmSecretFriend = f.type === "card" && !f.revealed && st.hands[p].includes(f.card);
   const iAmGov = p === d || (f.revealed && f.idx === p) || iAmSecretFriend;
@@ -624,6 +624,7 @@ function aiPlayMid(st, p, rand) {
   const bigTrick = pts >= 2 || (pts >= 1 && st.trickNo >= 8) || (isPoint(winCard) && rankOf(winCard) >= 13)
     || (iAmGov && hasJK && !mem.callGone && st.trickNo >= 4 && pts >= 1);
   const cand = sortLow(st, legal.filter(c => power(st, c) > best));
+  const hasSafeDump = legal.some(c => !isPoint(c) && c !== m && c !== "JK");
   for (const c of cand) {
     const pw = power(st, c);
     if (c === m) { if (bigTrick || (pts >= 1 && last) || st.trickNo >= 8) return { card: c }; continue; }
@@ -635,7 +636,8 @@ function aiPlayMid(st, p, rand) {
     }
     // 보통 카드: 모르는 사람이 이기는 중이면 점수가 걸렸을 때만 뺏음
     if (winSide === "unknown" && pts === 0 && !last) continue;
-    if (isPoint(c) && !holds(c, pw)) continue;                   // 뺏길 점수 카드로는 이기려 하지 않음
+    // 뺏길 점수 카드로는 이기려 하지 않음 — 단, 버릴 카드도 모두 점수 카드뿐이면 이기는 쪽을 택함
+    if (isPoint(c) && !holds(c, pw) && hasSafeDump) continue;
     if (holds(c, pw) || worth >= 1) return { card: c };
   }
   // 못 이기면: 점수 카드를 아끼고 가장 쓸모없는 카드를 버림

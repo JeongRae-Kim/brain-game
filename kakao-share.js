@@ -29,24 +29,23 @@ export function inviteUrl(room, go) {
   return u.toString();
 }
 
-// text: 카톡에 보일 글, url: 버튼 링크, button: 버튼 글자
-export async function sendInvite({ text, url, button = "들어가기", toast }) {
+// text: 카톡에 보일 글, url: 버튼 링크, button: 버튼 글자, buttons: [{ title, url }] (최대 2개, 있으면 우선)
+export async function sendInvite({ text, url, button = "들어가기", buttons, toast }) {
   // 클릭 직후에 바로 보내야 팝업이 막히지 않으므로, SDK는 미리 불러 둠(loadKakao)
   if (window.Kakao?.isInitialized?.()) {
     try {
-      window.Kakao.Share.sendDefault({
-        objectType: "text",
-        text: text.slice(0, 200),
-        link: { mobileWebUrl: url, webUrl: url },
-        buttonTitle: button.slice(0, 14)
-      });
+      const tpl = { objectType: "text", text: text.slice(0, 200), link: { mobileWebUrl: url, webUrl: url } };
+      if (buttons?.length) tpl.buttons = buttons.slice(0, 2).map(b => ({ title: b.title.slice(0, 14), link: { mobileWebUrl: b.url, webUrl: b.url } }));
+      else tpl.buttonTitle = button.slice(0, 14);
+      window.Kakao.Share.sendDefault(tpl);
       return true;
     } catch (e) { console.warn("카톡 공유 실패", e); }
   }
   try {
     if (navigator.share) { await navigator.share({ title: "가족 두뇌게임", text, url }); return true; }
   } catch { return false; /* 취소 */ }
-  try { await navigator.clipboard.writeText(`${text}\n${url}`); toast?.("초대 글과 링크를 복사했어요. 카톡에 붙여 넣으세요"); }
+  const links = buttons?.length ? buttons.map(b => `${b.title}: ${b.url}`).join("\n") : url;
+  try { await navigator.clipboard.writeText(`${text}\n${links}`); toast?.("초대 글과 링크를 복사했어요. 카톡에 붙여 넣으세요"); }
   catch { prompt("이 링크를 복사하세요", url); }
   return true;
 }

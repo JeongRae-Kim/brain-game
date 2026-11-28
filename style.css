@@ -410,3 +410,18 @@ body.chat-quick-only .chat-form { display: none; }
 .rp-cards .mc { cursor: default; }
 .rp-mem { background: #f7f1e6; border-radius: 12px; padding: 8px 10px; font-size: 14px; line-height: 1.6; }
 .rp-text { width: 100%; min-height: 240px; font-size: 13px; }
+.rp-sum { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-weight: 800; margin: 4px 0 8px; }
+.rp-sum .btn { width: auto; margin: 0; min-height: 40px; padding: 0 10px; font-size: 14px; }
+.rp-note { border-radius: 12px; padding: 8px 10px; margin: 6px 0; line-height: 1.5; font-size: 16px; }
+.rp-note.bad { background: #fde8e4; border: 2px solid #e0806f; }
+.rp-note.good { background: #e6f6e3; border: 2px solid #7cc271; }
+.rp-note.tip { background: #fff6d6; border: 2px solid #e0b100; }
+.rp-table-wrap { overflow-x: auto; }
+.rp-table { border-collapse: collapse; font-size: 14px; min-width: 100%; }
+.rp-table th, .rp-table td { border: 1px solid var(--line); padding: 6px; text-align: center; white-space: nowrap; }
+.rp-table td.hot { background: #fde8e4; font-weight: 800; }
+.mt-watch { font-size: 14px; color: var(--muted); font-weight: 700; }
+.mt-spec { margin-top: 10px; }
+.mt-spec h3 { margin: 10px 0 6px; }
+.mt-spec-list { background: #f7f1e6; border-radius: 12px; padding: 8px 10px; display: flex; flex-direction: column; gap: 4px; font-size: 15px; line-height: 1.45; max-height: 340px; overflow-y: auto; }
+.mt-spec-list div:first-child { font-weight: 800; }

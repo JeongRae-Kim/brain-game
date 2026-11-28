@@ -47,6 +47,9 @@
           ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
         },
         "mighty": {
+          "watch": {
+            "$uid": { ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && auth.uid == $uid", ".validate": "!newData.exists() || newData.val() == true" }
+          },
           "seats": {
             "$i": {
               ".write": "auth != null && ($room == 'family' || $room == 'lee' || $room == 'ryu' || $room == 'park' || $room == 'taean-plant') && ((!data.exists() && newData.val() == auth.uid) || (data.val() == auth.uid && !newData.exists()) || root.child('rooms').child($room).child('host').val() == auth.uid || (root.child('rooms').child($room).child('mighty/seats/0').val() == auth.uid || root.child('rooms').child($room).child('mighty/seats/1').val() == auth.uid || root.child('rooms').child($room).child('mighty/seats/2').val() == auth.uid || root.child('rooms').child($room).child('mighty/seats/3').val() == auth.uid || root.child('rooms').child($room).child('mighty/seats/4').val() == auth.uid) || (data.exists() && !newData.exists() && root.child('rooms').child($room).child('players').child(data.val() + '').child('online').val() == false))"

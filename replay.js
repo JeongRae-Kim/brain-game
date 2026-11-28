@@ -128,6 +128,8 @@ export async function openReplayList(view) {
   const cb = el("input"); cb.type = "checkbox"; cb.checked = true;
   onlyMine.append(cb, el("span", null, " 내가 참여한 판만"));
   card.appendChild(onlyMine);
+  const statsBtn = el("button", "btn", "📊 사람별 실수 통계");
+  card.appendChild(statsBtn);
   const list = el("ol", "rp-list");
   card.appendChild(list);
   const back = el("button", "btn", "대기실로");
@@ -165,14 +167,61 @@ export async function openReplayList(view) {
     }
   };
   cb.addEventListener("change", draw);
+  statsBtn.addEventListener("click", () => openStats(view, rows));
   draw();
 }
 
+// ---------- 화면: 사람별 실수 통계 ----------
+const TAGS = ["놓친 자르기", "주공 무늬 선", "점수 바치기", "숨은 프렌드에게 바침", "조커 낭비", "점수 안 얹음"];
+async function openStats(view, rows) {
+  view.textContent = "";
+  const card = el("div", "card");
+  card.appendChild(el("h2", null, "📊 사람별 실수 통계"));
+  card.appendChild(el("p", "note", "저장된 판에서 사람이 둔 수만 검사해요 (판당 횟수). 숫자가 클수록 자주 하는 실수예요."));
+  const box = el("div", "rp-stats");
+  box.appendChild(el("p", "note", "계산 중…"));
+  card.appendChild(box);
+  const back = el("button", "btn", "목록으로");
+  back.addEventListener("click", () => openReplayList(view));
+  view.append(card, back);
+  const { patternStats } = await import("./analyze.js");
+  const reps = [];
+  for (const x of rows) { try { reps.push(JSON.parse(x.json)); } catch { /* 깨진 기보 */ } }
+  const stats = await patternStats(reps);
+  box.textContent = "";
+  if (!stats.length) { box.appendChild(el("p", "note", "아직 사람이 둔 판이 없어요")); return; }
+  const tbl = el("table", "rp-table");
+  const hr = el("tr");
+  for (const h of ["이름", "판", ...TAGS, "⭐ 좋은 수"]) hr.appendChild(el("th", null, h));
+  tbl.appendChild(hr);
+  for (const s of stats) {
+    const tr = el("tr");
+    tr.appendChild(el("td", null, s.name));
+    tr.appendChild(el("td", null, String(s.deals)));
+    for (const t of TAGS) {
+      const v = (s.tags[t] || 0) / s.deals;
+      tr.appendChild(el("td", v >= 0.5 ? "hot" : null, v ? v.toFixed(1) : "-"));
+    }
+    tr.appendChild(el("td", null, (s.good / s.deals).toFixed(1)));
+    tbl.appendChild(tr);
+  }
+  const wrap = el("div", "rp-table-wrap");
+  wrap.appendChild(tbl);
+  box.appendChild(wrap);
+}
+
 // ---------- 화면: 복기 ----------
-export function openReplay(view, r) {
+const ICON = { bad: "❗", good: "⭐", tip: "💡" };
+export function openReplay(view, r, { onClose, closeLabel } = {}) {
   const { steps } = rebuild(r);
   const me = D.uid();
   let i = 0;
+  let notes = null, prog = "해설 계산 중…";
+  import("./analyze.js").then(({ analyzeReplay }) => analyzeReplay(r, {
+    onProgress: (d, t) => { prog = `해설 계산 중… ${Math.round(d / t * 100)}%`; const el_ = root.querySelector(".rp-sum"); if (el_) el_.textContent = prog; }
+  })).then(res => { notes = res.notes; if (root.isConnected) draw(); })
+    .catch(e => { console.error(e); prog = "해설을 계산하지 못했어요"; notes = []; if (root.isConnected) draw(); });
+  const flagged = () => [...new Set((notes || []).map(n => n.step))].sort((a, b) => a - b);
   const root = el("div", "rp");
   view.textContent = "";
   view.appendChild(root);
@@ -189,13 +238,36 @@ export function openReplay(view, r) {
     root.textContent = "";
     const top = el("div", "rp-top");
     top.appendChild(el("b", null, `${i}/${steps.length - 1}`));
-    top.appendChild(el("span", "rp-now", s.text));
+    const icons = (notes || []).filter(n => n.step === i).map(n => ICON[n.kind]).join("");
+    top.appendChild(el("span", "rp-now", s.text + (icons ? " " + icons : "")));
     root.appendChild(top);
     const ctl = el("div", "rp-ctl");
     for (const [label, fn] of [["⏮", () => trickStart(-1)], ["◀", () => go(i - 1)], ["▶", () => go(i + 1)], ["⏭", () => trickStart(1)]]) {
       const b = el("button", "btn", label); b.addEventListener("click", fn); ctl.appendChild(b);
     }
     root.appendChild(ctl);
+    // 해설 요약 + 지적 사이 이동
+    const sum = el("div", "rp-sum");
+    if (!notes) sum.textContent = prog;
+    else {
+      const cnt = k => notes.filter(n => n.kind === k).length;
+      sum.textContent = notes.length ? `해설: ❗${cnt("bad")} ⭐${cnt("good")} 💡${cnt("tip")}` : "해설: 눈에 띄는 실수가 없었어요 👍";
+      const fl = flagged();
+      if (fl.length) {
+        const prev = el("button", "btn small-label", "◀ 이전 해설"), next = el("button", "btn small-label", "다음 해설 ▶");
+        prev.addEventListener("click", () => { const t = fl.filter(x => x < i).pop(); if (t != null) go(t); });
+        next.addEventListener("click", () => { const t = fl.find(x => x > i); if (t != null) go(t); });
+        prev.disabled = !fl.some(x => x < i); next.disabled = !fl.some(x => x > i);
+        sum.append(prev, next);
+      }
+    }
+    root.appendChild(sum);
+    for (const n of (notes || []).filter(n => n.step === i)) {
+      const box = el("div", "rp-note " + n.kind);
+      box.appendChild(el("b", null, `${ICON[n.kind]} ${st.players[n.p].name} · ${n.tag === "계산" ? (n.kind === "good" ? "좋은 선택" : "더 나은 수") : n.tag}`));
+      box.appendChild(el("div", null, n.text));
+      root.appendChild(box);
+    }
     // 정보
     const info = el("div", "mt-info");
     if (st.contract) {
@@ -262,8 +334,8 @@ export function openReplay(view, r) {
       try { await navigator.clipboard.writeText(text); D.toast("기보를 복사했어요. Claude 채팅에 붙여 넣으면 해설해 드려요"); }
       catch { showText(text); }
     });
-    const list = el("button", "btn", "목록으로");
-    list.addEventListener("click", () => openReplayList(view));
+    const list = el("button", "btn", onClose ? (closeLabel || "돌아가기") : "목록으로");
+    list.addEventListener("click", () => (onClose ? onClose() : openReplayList(view)));
     bottom.append(copy, list);
     root.appendChild(bottom);
   }
