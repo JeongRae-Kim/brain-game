@@ -1,16 +1,44 @@
-// 🃏 마이티 화면 — 1단계: 나 + 컴퓨터 4명 연습판
+// 🃏 마이티 화면 — 연습판(나 + 컴퓨터 4명)과 여러 사람 탁자가 함께 쓰는 탁자 그리기
 import * as M from "./mighty.js";
 
-const AI_DELAY = 750, BID_DELAY = 1200, TRICK_PAUSE = 1300;
-const BOT_NAMES = ["컴퓨터 가", "컴퓨터 나", "컴퓨터 다", "컴퓨터 라"];
+export const SPEEDS = {
+  slow: { label: "🐢 천천히", ai: 2000, bid: 2000, pause: 3000 },
+  normal: { label: "보통", ai: 1200, bid: 1500, pause: 2000 },
+  fast: { label: "🐇 빠르게", ai: 750, bid: 1200, pause: 1300 }
+};
+export const DEFAULT_OPTS = {
+  speed: "slow", manualNext: true, showTaken: false, dealEndCards: false,
+  aiSignal: false, mightyFixed: false, chatQuick: false
+};
+const OPT_LABELS = [
+  ["manualNext", "트릭마다 '다음 ▶' 눌러 넘기기", "연습판만 · 다섯 장을 천천히 확인"],
+  ["showTaken", "먹은 점수 카드 보여 주기", "켜면 기억하기 쉬워지지만 기억 훈련 효과는 줄어요"],
+  ["dealEndCards", "판 끝 점수표에 먹은 카드 목록", ""],
+  ["aiSignal", "컴퓨터가 '3·6·9 = 조커 없음' 신호 쓰기", "컴퓨터 프렌드가 신호를 내고 컴퓨터 주공이 조커 콜"],
+  ["mightyFixed", "마이티는 언제나 ♠A", "끄면: 기루다가 ♠일 때 ◆A가 마이티"],
+  ["chatQuick", "마이티 중 대화는 빠른 답장만", "여러 사람 탁자만 · 패 이야기 막기"]
+];
+export const BOT_NAMES = ["컴퓨터 가", "컴퓨터 나", "컴퓨터 다", "컴퓨터 라", "컴퓨터 마"];
 
-function el(tag, cls, text) {
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch { /* 무시 */ } }
+};
+export function loadOpts() {
+  try { return { ...DEFAULT_OPTS, ...JSON.parse(store.get("bg-mighty-opts") || "{}") }; } catch { return { ...DEFAULT_OPTS }; }
+}
+export function saveOpts(o) { store.set("bg-mighty-opts", JSON.stringify(o)); }
+
+export function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text != null) e.textContent = text;
   return e;
 }
 const red = c => c !== "JK" && (c[0] === "H" || c[0] === "D");
+const LENGTHS = [["d3", "3판"], ["d5", "5판"], ["d10", "10판"], ["m20", "20분"], ["m30", "30분"], ["m60", "60분"]];
+export const lengthOf = k => (k[0] === "d" ? { deals: Number(k.slice(1)) } : { minutes: Number(k.slice(1)) });
+export const lengthText = k => (LENGTHS.find(x => x[0] === k) || [0, k])[1];
 
 function cardEl(c, { small = false, playable = false, picked = false, onClick } = {}) {
   const b = el("button", "mc" + (small ? " small" : "") + (red(c) ? " red" : "") + (c === "JK" ? " joker" : "")
@@ -25,24 +53,49 @@ function cardEl(c, { small = false, playable = false, picked = false, onClick } 
   return b;
 }
 
-// view: 그려 넣을 상자, me: 내 이름, toast, onExit
-export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) {
-  view.textContent = "";
-  const setup = el("div", "card");
-  setup.appendChild(el("h2", null, "🃏 마이티 연습 (나 + 컴퓨터 4명)"));
-  setup.appendChild(el("p", "note", "게임 길이를 고르세요"));
+// 길이·속도·옵션 고르는 상자 (연습판 / 탁자 공용)
+export function optionsBox(state, { multi = false, onChange } = {}) {
+  const box = el("div");
+  box.appendChild(el("p", "note", "게임 길이"));
   const sel = el("div", "seg wrap");
-  const opts = [["d3", "3판"], ["d5", "5판"], ["d10", "10판"], ["m20", "20분"], ["m30", "30분"], ["m60", "60분"]];
-  let pick = "d5";
-  const btns = opts.map(([k, label]) => {
-    const b = el("button", "btn seg-btn" + (k === pick ? " selected" : ""), label);
-    b.addEventListener("click", () => { pick = k; btns.forEach(x => x.classList.toggle("selected", x === b)); });
+  const lenBtns = LENGTHS.map(([k, label]) => {
+    const b = el("button", "btn seg-btn" + (k === state.len ? " selected" : ""), label);
+    b.addEventListener("click", () => { state.len = k; lenBtns.forEach(x => x.classList.toggle("selected", x === b)); onChange?.(); });
     sel.appendChild(b);
     return b;
   });
-  setup.appendChild(sel);
-  const go = el("button", "btn primary", "시작");
-  setup.appendChild(go);
+  box.appendChild(sel);
+  box.appendChild(el("p", "note", "속도"));
+  const sp = el("div", "seg");
+  const spBtns = Object.entries(SPEEDS).map(([k, v]) => {
+    const b = el("button", "btn seg-btn" + (k === state.opts.speed ? " selected" : ""), v.label);
+    b.addEventListener("click", () => { state.opts.speed = k; spBtns.forEach(x => x.classList.toggle("selected", x === b)); onChange?.(); });
+    sp.appendChild(b);
+    return b;
+  });
+  box.appendChild(sp);
+  const ul = el("ul", "set-list");
+  for (const [k, label, hint] of OPT_LABELS) {
+    if (multi && k === "manualNext") continue;
+    if (!multi && k === "chatQuick") continue;
+    const li = el("li");
+    const lab = el("label");
+    const cb = el("input");
+    cb.type = "checkbox";
+    cb.checked = !!state.opts[k];
+    cb.addEventListener("change", () => { state.opts[k] = cb.checked; onChange?.(); });
+    const span = el("span");
+    span.appendChild(el("span", null, label));
+    if (hint) span.appendChild(el("small", "hint", hint));
+    lab.append(cb, span);
+    li.appendChild(lab);
+    ul.appendChild(li);
+  }
+  box.appendChild(ul);
+  return box;
+}
+
+export function rulesBox() {
   const rules = el("details", "rules");
   rules.appendChild(el("summary", null, "규칙 요약 보기"));
   for (const t of [
@@ -50,120 +103,161 @@ export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) 
     "공약: 기루다 무늬와 장수(13장부터, 노기루다 12장부터). 가장 높게 부른 사람이 주공",
     "주공은 남은 3장을 받아 3장을 버리고 프렌드를 정함 (카드·초구·노프렌드·사람 지정)",
     "센 카드: 마이티(♠A, 기루다가 ♠면 ◆A) > 조커 > 기루다 > 처음 낸 무늬",
-    "조커는 첫 판·마지막 판에 힘이 없음. ♣3(기루다 ♣면 ♠3)을 먼저 내며 조커 콜 가능",
-    "같은 무늬가 있으면 같은 무늬를 내야 함 (마이티·조커는 언제나 가능). 첫 판엔 기루다를 먼저 못 냄",
+    "조커는 첫 트릭·마지막 트릭에 힘이 없음. ♣3(기루다 ♣면 ♠3)을 먼저 내며 조커 콜 가능",
+    "같은 무늬가 있으면 같은 무늬를 내야 함 (마이티·조커는 언제나 가능). 첫 트릭엔 기루다를 먼저 못 냄",
     "점수: 이기면 (먹은 장수−공약)+(공약−13)×2+1, 지면 −(공약−먹은 장수). 노기루다·노프렌드는 2배"
   ]) rules.appendChild(el("p", null, "• " + t));
-  setup.appendChild(rules);
+  return rules;
+}
+
+// 행동 하나를 엔진에 적용 (연습판·방장 공용)
+export function applyAction(st, p, a) {
+  if (a.k === "bid") M.applyBid(st, p, a.action);
+  else if (a.k === "kitty") M.applyKitty(st, p, { discards: a.discards, newTrump: a.newTrump });
+  else if (a.k === "friend") M.applyFriend(st, p, a.spec);
+  else if (a.k === "play") M.applyPlay(st, p, a.card, a.opts || {});
+  else if (a.k === "next") M.nextDeal(st);
+  else throw new Error("알 수 없는 행동");
+}
+
+// 컴퓨터 한 수 + 공약 알림 문구
+export function aiMove(st, p) {
+  const before = st.phase === "bid" ? JSON.stringify(st.bids[p]) : null;
+  M.aiStep(st, p);
+  if (st.phase !== "bid") return null;
+  const b = st.bids[p];
+  if (b && b !== "pass" && JSON.stringify(b) !== before) return `방금 ${st.players[p].name}님이 ${M.bidText(b)}으로 올렸어요`;
+  if (b === "pass") return `${st.players[p].name}: 패스`;
+  return null;
+}
+
+// ---------------- 연습판 ----------------
+export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) {
+  view.textContent = "";
+  const state = { len: store.get("bg-mighty-len") || "d5", opts: loadOpts() };
+  const setup = el("div", "card");
+  setup.appendChild(el("h2", null, "🃏 마이티 연습 (나 + 컴퓨터 4명)"));
+  setup.appendChild(optionsBox(state, { onChange: () => { saveOpts(state.opts); store.set("bg-mighty-len", state.len); } }));
+  const go = el("button", "btn primary", "시작");
+  setup.appendChild(go);
+  setup.appendChild(rulesBox());
   const back = el("button", "btn", "대기실로");
   back.addEventListener("click", onExit);
   view.append(setup, back);
 
   go.addEventListener("click", () => {
-    const length = pick[0] === "d" ? { deals: Number(pick.slice(1)) } : { minutes: Number(pick.slice(1)) };
-    const players = [{ id: "me", name: myName || "나", ai: false }, ...BOT_NAMES.map((n, i) => ({ id: "bot" + i, name: n, ai: true }))];
-    const st = M.newMatch({ players, seed: Math.floor(Math.random() * 2 ** 31), length });
-    runTable({ view, st, me: 0, toast, onExit, onMatchEnd });
+    const players = [{ id: "me", name: myName || "나", ai: false }, ...BOT_NAMES.slice(0, 4).map((n, i) => ({ id: "bot" + i, name: n, ai: true }))];
+    const st = M.newMatch({ players, seed: Math.floor(Math.random() * 2 ** 31), length: lengthOf(state.len), opts: { ...state.opts } });
+    let tbl;
+    let aiTimer = null;
+    const runAI = () => {
+      clearTimeout(aiTimer);
+      if (tbl.waiting()) return;              // 트릭 결과를 보여 주는 중
+      const p = M.whoActs(st);
+      if (p < 0 || !st.players[p].ai) return;
+      const sp = SPEEDS[st.opts.speed] || SPEEDS.slow;
+      aiTimer = setTimeout(() => {
+        let msg = null;
+        try { msg = aiMove(st, p); } catch (e) { console.error(e); }
+        if (msg) tbl.flash(msg);
+        tbl.update();
+        runAI();
+      }, st.phase === "bid" ? sp.bid : sp.ai);
+    };
+    tbl = runTable({
+      view, getState: () => st, me: 0, toast, multi: false,
+      submit: a => { applyAction(st, 0, a); tbl.update(); runAI(); },
+      onIdle: runAI,
+      onExit: () => { clearTimeout(aiTimer); onExit(); },
+      onMatchEnd
+    });
+    runAI();
   });
 }
 
-function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
-  let busy = false, timer = null;
-  let picks = [];                // 버릴 카드 고르기
-  let newTrump = null;           // 기루다 바꾸기
-  let pendingCard = null;        // 조커/콜 선택 대기
-  let showTrick = null;          // 끝난 판 잠깐 보여 주기
-  let bidSuit = null, bidN = null;
-  let lastShown = null, saved = false;
-  let flash = null;              // 방금 일어난 일 (공약 단계에서 크게 보여 줌)
-  let flashTimer = null;
+// ---------------- 탁자 그리기 ----------------
+// getState(): 지금 상태, me: 내 자리(-1 = 구경), submit(action): 행동 보내기
+// onIdle(): 트릭 결과 보여 주기가 끝났을 때 (연습판 컴퓨터 진행용)
+export function runTable({ view, getState, me, submit, toast, multi, onIdle, onExit, onMatchEnd, header }) {
+  let picks = [], newTrump = null, pendingCard = null, showTrick = null, lastShown = null;
+  let bidSuit = null, bidN = null, saved = false, friendKnown = false, lastPhase = null;
+  let flash = null, flashTimer = null, pauseTimer = null;
+  const root = el("div", "mt");
+  view.textContent = "";
+  if (header) view.appendChild(header);
+  view.appendChild(root);
+  const sp = () => SPEEDS[getState()?.opts?.speed] || SPEEDS.slow;
   const setFlash = text => {
     flash = { text, until: Date.now() + 2600 };
     clearTimeout(flashTimer);
     flashTimer = setTimeout(() => { if (root.isConnected) render(); }, 2700);
   };
 
-  const root = el("div", "mt");
-  view.textContent = "";
-  view.appendChild(root);
+  function send(a) {
+    // 미리 검사해서 안 되는 행동은 바로 알려 줌
+    const st = getState();
+    try { applyAction(JSON.parse(JSON.stringify(st)), me, a); } catch (e) { toast(e.message); return false; }
+    submit(a);
+    return true;
+  }
 
-  function act(fn) {
-    try { fn(); } catch (e) { toast(e.message); return; }
-    afterChange();
-  }
-  let friendKnown = false, lastPhase = null;
-  function teamClass(p) {
-    if (!st.contract) return "";
-    if (p === st.contract.declarer) return " gov-d";
-    const f = st.friend;
-    if (f && f.revealed && f.idx === p) return " gov-f";
-    return "";
-  }
-  function afterChange() {
-    // 프렌드가 막 밝혀졌으면 크게 알림
+  function update() {
+    const st = getState();
+    if (!st || !root.isConnected) return;
     const f = st.friend;
     if (f && f.revealed && !friendKnown && st.phase !== "bid") {
       friendKnown = true;
       setFlash(f.idx == null ? "프렌드 없이 주공 혼자예요" : `🤝 ${st.players[f.idx].name}님이 프렌드!`);
     }
     if (!f) friendKnown = false;
-    // 공약이 끝나면 공약 안내는 지움
     if (lastPhase === "bid" && st.phase !== "bid" && !(f && f.revealed)) flash = null;
+    if (st.flash && st.flash.at !== flash?.at && Date.now() - st.flash.at < 2600) { flash = { text: st.flash.text, at: st.flash.at, until: st.flash.at + 2600 }; }
     lastPhase = st.phase;
-    // 판이 막 끝났으면 잠깐 보여 줌
-    if (st.lastTrick && st.lastTrick !== lastShown) {
-      lastShown = st.lastTrick;
-      showTrick = { src: st.lastTrick, until: Date.now() + TRICK_PAUSE };
-      render();
-      clearTimeout(timer);
-      timer = setTimeout(() => { showTrick = null; afterChange(); }, TRICK_PAUSE);
-      return;
+    // 트릭이 막 끝났으면 결과를 보여 줌
+    const key = st.lastTrick ? `${st.dealNo}-${st.lastTrick.trickNo}` : null;
+    if (key && key !== lastShown) {
+      lastShown = key;
+      showTrick = { src: st.lastTrick };
+      clearTimeout(pauseTimer);
+      const manual = !multi && st.opts?.manualNext;
+      if (!manual) pauseTimer = setTimeout(() => { showTrick = null; render(); onIdle?.(); }, sp().pause);
     }
+    if (st.phase === "bid" || st.phase === "kitty") showTrick = null;
     render();
-    schedule();
-  }
-  function schedule() {
-    clearTimeout(timer);
-    if (showTrick) return;
-    const p = M.whoActs(st);
-    if (p >= 0 && st.players[p].ai) {
-      const bidding = st.phase === "bid";
-      timer = setTimeout(() => {
-        const before = bidding ? JSON.stringify(st.bids[p]) : null;
-        try { M.aiStep(st, p); } catch (e) { console.error(e); }
-        if (bidding && st.phase === "bid") {
-          const b = st.bids[p];
-          if (b && b !== "pass" && JSON.stringify(b) !== before) setFlash(`방금 ${st.players[p].name}님이 ${M.bidText(b)}으로 올렸어요`);
-          else if (b === "pass") setFlash(`${st.players[p].name}: 패스`);
-        }
-        afterChange();
-      }, bidding ? BID_DELAY : AI_DELAY);
-    }
   }
 
-  // ---------- 그리기 ----------
   function render() {
+    const st = getState();
+    if (!st || !root.isConnected) return;
     root.textContent = "";
     const top = el("div", "mt-seats");
-    for (let k = 1; k < 5; k++) {
-      const p = (me + k) % 5;
-      top.appendChild(seat(p));
-    }
+    const base = me >= 0 ? me : 0;
+    for (let k = me >= 0 ? 1 : 0; k < 5; k++) top.appendChild(seat((base + k) % 5));
+    if (me < 0) top.classList.add("five");
     root.appendChild(top);
     root.appendChild(infoBar());
     root.appendChild(center());
-    root.appendChild(seat(me, true));
+    if (me >= 0) root.appendChild(seat(me, true));
     root.appendChild(actionPanel());
-    root.appendChild(hand());
+    if (me >= 0) root.appendChild(hand());
     const log = el("div", "mt-log");
     for (const t of st.log.slice(-4)) log.appendChild(el("div", null, t));
     root.appendChild(log);
-    const quit = el("button", "btn link-btn", "그만하고 나가기");
-    quit.addEventListener("click", () => { clearTimeout(timer); onExit(); });
+    const quit = el("button", "btn link-btn", multi ? "대기실로 (탁자는 계속돼요)" : "그만하고 나가기");
+    quit.addEventListener("click", () => { clearTimeout(pauseTimer); onExit(); });
     root.appendChild(quit);
   }
 
+  function teamClass(p) {
+    const st = getState();
+    if (!st.contract) return "";
+    if (p === st.contract.declarer) return " gov-d";
+    const f = st.friend;
+    if (f && f.revealed && f.idx === p) return " gov-f";
+    return "";
+  }
   function role(p) {
+    const st = getState();
     if (!st.contract) return "";
     if (p === st.contract.declarer) return "👑";
     const f = st.friend;
@@ -172,6 +266,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     return "";
   }
   function seat(p, mine = false) {
+    const st = getState();
     const secret = p === me && st.friend?.type === "card" && !st.friend.revealed && st.hands[me].includes(st.friend.card);
     const d = el("div", "mt-seat" + (M.whoActs(st) === p ? " turn" : "") + (mine ? " mine" : "") + teamClass(p) + (secret ? " secret-f" : ""));
     d.appendChild(el("b", null, `${role(p)} ${st.players[p].name}${mine ? " (나)" : ""}`));
@@ -180,12 +275,16 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     if (st.phase === "bid") sub = b === "pass" ? "패스" : b ? M.bidText(b) : "…";
     else if (st.phase === "play" || st.phase === "dealEnd") sub += ` · 점수 ${st.taken[p].length}`;
     d.appendChild(el("small", null, sub));
+    if (st.opts?.showTaken && st.taken[p].length && st.phase !== "bid") {
+      d.appendChild(el("small", "taken", st.taken[p].map(M.cardText).join(" ")));
+    }
     d.appendChild(el("small", "tot", `총점 ${st.scores[p]}`));
     return d;
   }
   function infoBar() {
+    const st = getState();
     const d = el("div", "mt-info");
-    const parts = [`${st.dealNo}판째` + (st.length.deals ? `/${st.length.deals}` : "")];
+    const parts = [`${st.dealNo}판째` + (st.length.deals ? `/${st.length.deals}` : st.length.minutes ? ` · ${st.length.minutes}분` : "")];
     if (st.contract) {
       parts.push(`${st.players[st.contract.declarer].name} ${M.bidText(st.contract)}`);
       const f = st.friend;
@@ -193,8 +292,8 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
         : f.type === "card" ? `프렌드 ${M.cardText(f.card)}${f.revealed ? ` = ${st.players[f.idx].name}` : ""}` : `프렌드 ${st.players[f.idx].name}`);
       if (st.phase === "play") {
         const gov = st.taken[st.contract.declarer].length + (st.friend?.revealed && st.friend.idx != null ? st.taken[st.friend.idx].length : 0);
-        parts.push(`주공 편 ${gov}장 · ${st.trickNo}/10판`);
-        parts.push(`마이티 ${M.cardText(M.mightyOf(st.trump))} · 콜 ${M.cardText(M.callCardOf(st.trump))}`);
+        parts.push(`주공 편 ${gov}장 · ${st.trickNo}/10트릭`);
+        parts.push(`마이티 ${M.cardText(M.mightyCard(st))} · 콜 ${M.cardText(M.callCardOf(st.trump))}`);
       }
     } else if (st.phase === "bid") {
       const { best, who } = M.highestBid(st);
@@ -204,11 +303,12 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     return d;
   }
   function center() {
+    const st = getState();
     const d = el("div", "mt-center");
     const cards = showTrick ? showTrick.src.cards : st.trick?.cards || [];
     if (showTrick) d.appendChild(el("div", "mt-win", `${st.players[showTrick.src.winner].name} 승!`));
     else if (st.trick?.called) d.appendChild(el("div", "mt-win", "조커 콜!"));
-    else if (st.trick?.leadSuit) d.appendChild(el("div", "mt-lead", `${M.SUIT_SYM[st.trick.leadSuit]} 판`));
+    else if (st.trick?.leadSuit) d.appendChild(el("div", "mt-lead", `${M.SUIT_SYM[st.trick.leadSuit]} 트릭`));
     const row = el("div", "mt-trick");
     for (const { p, card } of cards) {
       const w = el("div", "mt-played" + (showTrick && p === showTrick.src.winner ? " win" : "") + teamClass(p));
@@ -217,21 +317,25 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
       row.appendChild(w);
     }
     d.appendChild(row);
+    if (showTrick && !multi && st.opts?.manualNext && st.phase === "play") {
+      const nx = el("button", "btn primary mt-next", "다음 ▶");
+      nx.addEventListener("click", () => { showTrick = null; render(); onIdle?.(); });
+      d.appendChild(nx);
+    }
     return d;
   }
 
   function sortHand(h) {
-    const order = { [st.trump || "S"]: 0 };
+    const st = getState();
+    const order = { [st.trump && st.trump !== "N" ? st.trump : "S"]: 0 };
     let i = 1;
     for (const s of M.SUITS) if (!(s in order)) order[s] = i++;
-    const m = st.trump ? M.mightyOf(st.trump) : "S14";
-    return h.slice().sort((a, b) => {
-      const ka = a === m ? -2 : a === "JK" ? -1 : order[M.suitOf(a)] * 20 + (20 - M.rankOf(a));
-      const kb = b === m ? -2 : b === "JK" ? -1 : order[M.suitOf(b)] * 20 + (20 - M.rankOf(b));
-      return ka - kb;
-    });
+    const m = st.trump ? M.mightyCard(st) : "S14";
+    const key = c => (c === m ? -2 : c === "JK" ? -1 : order[M.suitOf(c)] * 20 + (20 - M.rankOf(c)));
+    return h.slice().sort((a, b) => key(a) - key(b));
   }
   function hand() {
+    const st = getState();
     const d = el("div", "mt-hand");
     const h = sortHand(st.hands[me]);
     const myTurnPlay = st.phase === "play" && st.turn === me && !showTrick && !pendingCard;
@@ -250,37 +354,35 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     return d;
   }
   function playCard(c) {
+    const st = getState();
     const leading = !st.trick.cards.length;
     if (leading && c === "JK") { pendingCard = { card: c, kind: "joker" }; render(); return; }
     if (leading && c === M.callCardOf(st.trump) && st.trickNo !== 1 && st.trickNo !== 10 && !st.hands[me].includes("JK")) {
       pendingCard = { card: c, kind: "call" }; render(); return;
     }
-    act(() => M.applyPlay(st, me, c));
+    send({ k: "play", card: c });
   }
 
-  // ---------- 내 차례에 할 일 ----------
   function actionPanel() {
+    const st = getState();
     const box = el("div", "mt-act");
     const actor = M.whoActs(st);
     if (st.phase === "dealEnd") return dealEndPanel(box);
     if (st.phase === "matchEnd") return matchEndPanel(box);
+    if (flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
     if (showTrick) return box;
-    if (st.phase !== "bid" && flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
     if (actor !== me) {
-      if (st.phase === "bid" && flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
       if (actor >= 0) box.appendChild(el("p", "note", `${st.players[actor].name} 차례…`));
       return box;
     }
     if (st.phase === "bid") {
-      const { best } = M.highestBid(st);
+      const { best, who } = M.highestBid(st);
       if (!bidSuit) bidSuit = best?.suit && best.suit !== "N" ? best.suit : "S";
       const minFor = s => {
         for (let n = s === "N" ? M.MIN_BID_NT : M.MIN_BID; n <= M.MAX_BID; n++) if (M.bidOk(st, { suit: s, n })) return n;
         return null;
       };
       if (bidN == null || !M.bidOk(st, { suit: bidSuit, n: bidN })) bidN = minFor(bidSuit);
-      const { who } = M.highestBid(st);
-      if (flash && flash.until > Date.now()) box.appendChild(el("p", "mt-flash", flash.text));
       box.appendChild(el("p", "mt-status", best
         ? `지금 최고: ${st.players[who].name} ${M.bidText(best)}${who === me ? " (나)" : ""} · 이기려면 더 높게`
         : "아직 아무도 안 불렀어요 · 13장부터 (노기루다 12장부터)"));
@@ -303,15 +405,15 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
       call.disabled = !bidN;
       call.addEventListener("click", () => {
         const bid = { suit: bidSuit, n: bidN };
-        act(() => { M.applyBid(st, me, bid); setFlash(`${M.bidText(bid)}으로 불렀어요`); toast(`${M.bidText(bid)}으로 불렀어요`); });
+        if (send({ k: "bid", action: bid })) { setFlash(`${M.bidText(bid)}으로 불렀어요`); toast(`${M.bidText(bid)}으로 불렀어요`); }
       });
       const pass = el("button", "btn", "패스");
-      pass.addEventListener("click", () => act(() => M.applyBid(st, me, "pass")));
+      pass.addEventListener("click", () => send({ k: "bid", action: "pass" }));
       row.append(call, pass);
       box.appendChild(row);
       if (M.canDealMiss(st, me)) {
         const dm = el("button", "btn link-btn", "딜미스 (다시 나눠 주세요)");
-        dm.addEventListener("click", () => act(() => M.applyBid(st, me, "dealmiss")));
+        dm.addEventListener("click", () => send({ k: "bid", action: "dealmiss" }));
         box.appendChild(dm);
       }
       return box;
@@ -329,32 +431,32 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
       box.appendChild(tr);
       const ok = el("button", "btn primary", "버리기");
       ok.disabled = picks.length !== 3;
-      ok.addEventListener("click", () => act(() => { M.applyKitty(st, me, { discards: picks, newTrump }); picks = []; }));
+      ok.addEventListener("click", () => { if (send({ k: "kitty", discards: picks, newTrump })) { picks = []; newTrump = null; } });
       box.appendChild(ok);
       return box;
     }
     if (st.phase === "friend") {
       box.appendChild(el("p", "note", "프렌드를 정하세요"));
-      const m = M.mightyOf(st.trump);
+      const m = M.mightyCard(st);
       const quick = [m, "JK", ...(st.trump !== "N" ? [st.trump + "14", st.trump + "13"] : []), "S14", "D14", "H14", "C14"]
         .filter((c, i, a) => a.indexOf(c) === i && !st.hands[me].includes(c) && !st.discards.includes(c)).slice(0, 5);
       const row = el("div", "mt-suits");
       for (const c of quick) {
         const b = el("button", "btn seg-btn", M.cardText(c) + (c === m ? "(마이티)" : ""));
-        b.addEventListener("click", () => act(() => M.applyFriend(st, me, { type: "card", card: c })));
+        b.addEventListener("click", () => send({ k: "friend", spec: { type: "card", card: c } }));
         row.appendChild(b);
       }
       box.appendChild(row);
       const row2 = el("div", "mt-suits");
       const first = el("button", "btn seg-btn", "초구 프렌드");
-      first.addEventListener("click", () => act(() => M.applyFriend(st, me, { type: "first" })));
+      first.addEventListener("click", () => send({ k: "friend", spec: { type: "first" } }));
       const none = el("button", "btn seg-btn", "노프렌드(2배)");
-      none.addEventListener("click", () => act(() => M.applyFriend(st, me, { type: "none" })));
+      none.addEventListener("click", () => send({ k: "friend", spec: { type: "none" } }));
       row2.append(first, none);
       for (let k = 1; k < 5; k++) {
         const p = (me + k) % 5;
         const b = el("button", "btn seg-btn", `${st.players[p].name} 지정`);
-        b.addEventListener("click", () => act(() => M.applyFriend(st, me, { type: "player", player: p })));
+        b.addEventListener("click", () => send({ k: "friend", spec: { type: "player", player: p } }));
         row2.appendChild(b);
       }
       box.appendChild(row2);
@@ -366,7 +468,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
         const row = el("div", "mt-suits");
         for (const s of M.SUITS) {
           const b = el("button", "btn seg-btn" + (s === "D" || s === "H" ? " redtxt" : ""), M.SUIT_SYM[s]);
-          b.addEventListener("click", () => { const c = pendingCard.card; pendingCard = null; act(() => M.applyPlay(st, me, c, { jokerSuit: s })); });
+          b.addEventListener("click", () => { const c = pendingCard.card; pendingCard = null; send({ k: "play", card: c, opts: { jokerSuit: s } }); render(); });
           row.appendChild(b);
         }
         box.appendChild(row);
@@ -376,8 +478,8 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
         box.appendChild(el("p", "note", `${M.cardText(pendingCard.card)}로 조커 콜을 할까요?`));
         const row = el("div", "row");
         const y = el("button", "btn primary", "조커 콜!"), n = el("button", "btn", "그냥 내기");
-        y.addEventListener("click", () => { const c = pendingCard.card; pendingCard = null; act(() => M.applyPlay(st, me, c, { call: true })); });
-        n.addEventListener("click", () => { const c = pendingCard.card; pendingCard = null; act(() => M.applyPlay(st, me, c, { call: false })); });
+        y.addEventListener("click", () => { const c = pendingCard.card; pendingCard = null; send({ k: "play", card: c, opts: { call: true } }); render(); });
+        n.addEventListener("click", () => { const c = pendingCard.card; pendingCard = null; send({ k: "play", card: c, opts: { call: false } }); render(); });
         row.append(y, n);
         box.appendChild(row);
         return box;
@@ -388,6 +490,7 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
   }
 
   function dealEndPanel(box) {
+    const st = getState();
     const r = st.dealResult;
     box.appendChild(el("h3", null, r.win ? "🎉 주공 편 승리!" : "🛡️ 야당 승리!"));
     box.appendChild(el("p", "note", `${st.players[r.declarer].name} ${M.bidText(r.contract)} · 주공 편 ${r.got}장`
@@ -395,16 +498,22 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     const ol = el("ol", "board");
     st.players.map((pl, i) => ({ pl, i })).sort((a, b) => st.scores[b.i] - st.scores[a.i]).forEach(({ pl, i }) => {
       const li = el("li", i === me ? "me" : "");
-      li.append(el("span", "who", pl.name), el("span", "time", `${r.delta[i] >= 0 ? "+" : ""}${r.delta[i]} → ${st.scores[i]}`));
+      const who = el("span", "who", pl.name);
+      if (st.opts?.dealEndCards) who.appendChild(el("small", "taken-line", st.taken[i].length ? st.taken[i].map(M.cardText).join(" ") : "먹은 점수 카드 없음"));
+      li.append(who, el("span", "time", `${r.delta[i] >= 0 ? "+" : ""}${r.delta[i]} → ${st.scores[i]}`));
       ol.appendChild(li);
     });
     box.appendChild(ol);
-    const next = el("button", "btn primary", M.matchOver(st) ? "최종 결과 보기" : "다음 판");
-    next.addEventListener("click", () => { M.nextDeal(st); showTrick = null; bidSuit = null; bidN = null; afterChange(); });
-    box.appendChild(next);
+    if (me >= 0) {
+      const next = el("button", "btn primary", M.matchOver(st) ? "최종 결과 보기" : "다음 판");
+      next.addEventListener("click", () => { showTrick = null; bidSuit = null; bidN = null; send({ k: "next" }); });
+      box.appendChild(next);
+      if (multi) box.appendChild(el("p", "note", "탁자에 앉은 누구든 눌러서 넘길 수 있어요"));
+    }
     return box;
   }
   function matchEndPanel(box) {
+    const st = getState();
     box.appendChild(el("h3", null, "🏁 게임 끝!"));
     const ol = el("ol", "board");
     const ranked = st.players.map((pl, i) => ({ pl, i })).sort((a, b) => st.scores[b.i] - st.scores[a.i]);
@@ -418,5 +527,6 @@ function runTable({ view, st, me, toast, onExit, onMatchEnd }) {
     return box;
   }
 
-  afterChange();
+  update();
+  return { update, flash: setFlash, waiting: () => !!showTrick };
 }

@@ -345,3 +345,19 @@ body.no-chat-fab .chat-fab { display: none; }
 .mt-played.gov-d .mc { box-shadow: 0 0 0 3px #e0b100; }
 .mt-played.gov-f .mc { box-shadow: 0 0 0 3px #4fae5c; }
 .mt-played.win.gov-d .mc, .mt-played.win.gov-f .mc { outline: 3px solid #ffd34d; outline-offset: 2px; }
+
+/* 마이티 옵션 · 탁자 */
+.set-list small.hint { display: block; font-size: 13px; color: var(--muted); }
+.mt-seat .taken { color: #2f6b4f; font-weight: 700; word-break: keep-all; }
+.taken-line { display: block; font-size: 13px; color: var(--muted); font-weight: 400; }
+.mt-next { margin: 8px auto 0; max-width: 220px; min-height: 48px; }
+.mt-seats.five { grid-template-columns: repeat(5, 1fr); }
+.mt-seatpick { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 8px 0 12px; }
+.mt-pick { border: 2px solid var(--line); border-radius: 12px; padding: 8px; text-align: center; display: flex; flex-direction: column; gap: 4px; }
+.mt-pick.me { border-color: var(--accent); background: #fff1e8; }
+.mt-pick.taken { background: #f4ede2; }
+.mt-pick .btn { margin: 4px 0 0; min-height: 44px; font-size: 17px; }
+.mt-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 800; margin-bottom: 8px; }
+.mt-head .btn { width: auto; min-height: 40px; margin: 0; padding: 0 12px; font-size: 14px; }
+#mighty-card .row .btn { font-size: 18px; }
+body.chat-quick-only .chat-form { display: none; }

@@ -14,6 +14,9 @@ export const isPoint = c => c !== "JK" && rankOf(c) >= 10;
 export const cardText = c => (c === "JK" ? "🃏조커" : SUIT_SYM[suitOf(c)] + (RANK_TXT[rankOf(c)] || rankOf(c)));
 export const mightyOf = trump => (trump === "S" ? "D14" : "S14");
 export const callCardOf = trump => (trump === "C" ? "S3" : "C3");
+// 옵션 mightyFixed: 기루다가 ♠여도 마이티는 ♠A 그대로
+export const mightyCard = st => (st.opts?.mightyFixed ? "S14" : mightyOf(st.trump));
+const isSignalCard = c => c !== "JK" && [3, 6, 9].includes(rankOf(c));
 export const bidText = b => (b ? `${SUIT_SYM[b.suit]} ${b.n}장` : "");
 
 function fullDeck() {
@@ -24,9 +27,9 @@ function fullDeck() {
 
 // ---------- 게임 전체 ----------
 // players: [{ id, name, ai }]  · length: { deals } 또는 { minutes }
-export function newMatch({ players, seed, length }) {
+export function newMatch({ players, seed, length, opts = {} }) {
   const st = {
-    players, seed, length, startedAt: Date.now(),
+    players, seed, length, opts, startedAt: Date.now(),
     scores: new Array(N).fill(0), dealNo: 0, dealer: N - 1, history: [], phase: "idle"
   };
   newDeal(st);
@@ -49,6 +52,8 @@ export function newDeal(st) {
   st.trickNo = 0;
   st.taken = Array.from({ length: N }, () => []);
   st.lastTrick = null;
+  st.jokerOut = false;
+  st.noJokerSignal = false;
   st.turn = (st.dealer + 1) % N;
   st.phase = "bid";
   st.dealResult = null;
@@ -173,7 +178,7 @@ export function legalPlays(st, p) {
   const h = st.hands[p];
   const t = st.trick;
   const trump = st.trump;
-  const mighty = mightyOf(trump);
+  const mighty = mightyCard(st);
   if (!t.cards.length) {
     // 첫 판에는 기루다를 먼저 낼 수 없음 (기루다밖에 없으면 예외)
     if (st.trickNo === 1 && trump !== "N") {
@@ -192,7 +197,7 @@ export function legalPlays(st, p) {
 
 function power(st, c) {
   const t = st.trick;
-  if (c === mightyOf(st.trump)) return 1000;
+  if (c === mightyCard(st)) return 1000;
   if (c === "JK") return jokerActive(st) ? 900 : -1;
   if (st.trump !== "N" && suitOf(c) === st.trump) return 500 + rankOf(c);
   if (suitOf(c) === t.leadSuit) return 100 + rankOf(c);
@@ -220,6 +225,9 @@ export function applyPlay(st, p, card, opts = {}) {
   }
   st.hands[p] = st.hands[p].filter(c => c !== card);
   t.cards.push({ p, card });
+  if (card === "JK") st.jokerOut = true;
+  // 약속 신호: 드러난 프렌드가 먼저 3·6·9를 내면 "조커 없음"
+  if (t.cards.length === 1 && isSignalCard(card) && st.friend?.revealed && st.friend.idx === p && suitOf(card) !== st.trump) st.noJokerSignal = true;
   const f = st.friend;
   if (f.type === "card" && card === f.card && !f.revealed) {
     f.revealed = true;
@@ -288,7 +296,7 @@ export function nextDeal(st) {
 // =====================================================================
 const sortLow = (st, cards) => cards.slice().sort((a, b) => lowKey(st, a) - lowKey(st, b));
 function lowKey(st, c) {
-  if (c === mightyOf(st.trump)) return 900;
+  if (c === mightyCard(st)) return 900;
   if (c === "JK") return 800;
   let k = rankOf(c);
   if (st.trump !== "N" && suitOf(c) === st.trump) k += 300;
@@ -296,8 +304,8 @@ function lowKey(st, c) {
   return k;
 }
 
-function strength(hand, trump) {
-  const m = mightyOf(trump);
+function strength(hand, trump, fixed) {
+  const m = fixed ? "S14" : mightyOf(trump);
   let s = 0;
   for (const c of hand) {
     if (c === m) s += 3;
@@ -315,7 +323,7 @@ export function aiAction(st, p, rand = Math.random) {
     if (canDealMiss(st, p) && rand() < 0.5) return { kind: "bid", action: "dealmiss" };
     let best = null;
     for (const s of [...SUITS, "N"]) {
-      const est = Math.round(6 + strength(h, s) * 0.85 - (s === "N" ? 1.5 : 0));
+      const est = Math.round(6 + strength(h, s, st.opts?.mightyFixed) * 0.85 - (s === "N" ? 1.5 : 0));
       if (!best || est > best.est) best = { suit: s, est };
     }
     // 아무도 안 불렀고 나만 남았으면 조금 무리해서라도 부름 (계속 다시 나누지 않게)
@@ -327,7 +335,7 @@ export function aiAction(st, p, rand = Math.random) {
     return { kind: "bid", action: "pass" };
   }
   if (st.phase === "kitty") {
-    const trump = st.trump, m = mightyOf(trump);
+    const trump = st.trump, m = mightyCard(st);
     const count = s => h.filter(c => suitOf(c) === s).length;
     const cand = h.filter(c => c !== m && c !== "JK" && (trump === "N" || suitOf(c) !== trump))
       .sort((a, b) => (isPoint(a) - isPoint(b)) || (count(suitOf(a)) - count(suitOf(b))) || (rankOf(a) - rankOf(b)));
@@ -335,7 +343,7 @@ export function aiAction(st, p, rand = Math.random) {
     return { kind: "kitty", discards: pool.slice(0, 3) };
   }
   if (st.phase === "friend") {
-    const m = mightyOf(st.trump);
+    const m = mightyCard({ ...st });
     const pick = [m, "JK", st.trump !== "N" ? st.trump + "14" : null, "S14", "D14", "H14", "C14"]
       .find(c => c && !h.includes(c) && !st.discards.includes(c));
     return { kind: "friend", spec: pick ? { type: "card", card: pick } : { type: "first" } };
@@ -347,14 +355,25 @@ export function aiAction(st, p, rand = Math.random) {
 function aiPlay(st, p, rand) {
   const legal = legalPlays(st, p);
   const t = st.trick;
-  const m = mightyOf(st.trump);
+  const m = mightyCard(st);
   const iAmGov = teamOf(st, p) === "gov" || (st.friend.type === "card" && st.hands[p].includes(st.friend.card));
   const ally = q => {
     if (q === p) return true;
     const qGov = teamOf(st, q) === "gov" && (q === st.contract.declarer || st.friend.revealed);
     return iAmGov ? qGov : !qGov;
   };
+  const sig = st.opts?.aiSignal;
+  const isDecl = p === st.contract.declarer;
+  const callC = callCardOf(st.trump);
   if (!t.cards.length) {
+    // 약속 신호 (옵션): 조커 없는 프렌드는 3·6·9로 알림 / 신호를 받은 주공은 조커 콜
+    if (sig && st.trickNo >= 2 && st.trickNo <= 9 && !st.jokerOut) {
+      if (isDecl && st.noJokerSignal && legal.includes(callC)) return { card: callC, opts: { call: true } };
+      if (!isDecl && teamOf(st, p) === "gov" && st.friend.revealed && !st.hands[p].includes("JK") && !st.noJokerSignal) {
+        const s9 = sortLow(st, legal.filter(c => isSignalCard(c) && suitOf(c) !== st.trump && !isPoint(c)));
+        if (s9.length) return { card: s9[0] };
+      }
+    }
     // 먼저 낼 때
     let card;
     const trumps = legal.filter(c => st.trump !== "N" && suitOf(c) === st.trump && c !== m);
@@ -378,6 +397,11 @@ function aiPlay(st, p, rand) {
   const { who, best } = currentWinner(st);
   const pts = t.cards.filter(x => isPoint(x.card)).length;
   const last = t.cards.length === N - 1;
+  // 신호를 받은 주공: 이 트릭을 이겨서 다음에 조커 콜을 하러 감
+  if (sig && isDecl && st.noJokerSignal && !st.jokerOut && st.hands[p].includes(callC) && st.trickNo < 9) {
+    const w = sortLow(st, legal.filter(c => power(st, c) > best && c !== "JK"));
+    if (w.length) return { card: w[0] };
+  }
   if (ally(who) && (last || best >= 900)) {
     // 우리 편이 이기고 있으면 점수 카드를 얹어 줌
     const give = sortLow(st, legal.filter(c => isPoint(c) && power(st, c) <= best && c !== m && c !== "JK"));

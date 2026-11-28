@@ -16,6 +16,7 @@ import { playBrick } from "./ui-brick.js";
 import { playBlocks } from "./ui-blocks.js";
 import { playMaze } from "./ui-maze.js";
 import { openMightyPractice } from "./ui-mighty.js";
+import { setupMightyNet } from "./mighty-net.js";
 const ARCADE = { shooter: playShooter, brick: playBrick, blocks: playBlocks, maze: playMaze };
 import { LEVEL_NAMES, WORDS } from "./words.js";
 import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
@@ -61,6 +62,7 @@ let custom = {};              // 위 목록을 읽어 둔 것
 let usedWords = {};           // 이 방에서 이미 나온 단어
 let handoverTo = null;
 let bestData = {};
+let mightyNet = null;
 let hiddenGames = {};          // 방 설정: 숨긴 게임
 let keyHandler = null;        // 실제 키보드 입력 (PC)
 document.addEventListener("keydown", e => {
@@ -128,6 +130,7 @@ function join() {
   onValue(ref(db, `${base}/host`), s => {
     const was = hostUid;
     hostUid = s.val();
+    if (was !== hostUid) mightyNet?.hostChanged();
     if (!hostUid) claimHost(true);
     else if (hostUid === uid && was !== uid) onDisconnect(ref(db, `rooms/${ROOM}/host`)).remove().catch(() => {});
     renderLobby();
@@ -138,6 +141,12 @@ function join() {
   onValue(ref(db, `${base}/best`), s => { bestData = s.val() || {}; renderHof(); });
   onValue(ref(db, "custom"), s => { customRaw = s.val() || {}; custom = parseCustom(customRaw); });
   startChat();
+  mightyNet = setupMightyNet({
+    db, ref, set, push, onValue, get, ROOM, toast, sysChat,
+    uid: () => uid, myName: () => myName, isHost: () => hostUid === uid, playersOf: () => players,
+    show, onView: () => { show("view-lobby"); renderLobby(); }
+  });
+  mightyNet.hostChanged();
 
   show("view-lobby");
 }

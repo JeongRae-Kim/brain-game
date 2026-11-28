@@ -37,6 +37,21 @@
         "used": {
           ".write": "auth != null && (root.child('rooms').child($room).child('host').val() == auth.uid || root.child('admins').child(auth.uid).child('code').val() == root.child('adminCode').val())"
         },
+        "mighty": {
+          "seats": {
+            "$i": {
+              ".write": "auth != null && ((!data.exists() && newData.val() == auth.uid) || (data.val() == auth.uid && !newData.exists()) || root.child('rooms').child($room).child('host').val() == auth.uid)"
+            }
+          },
+          "setup": { ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid" },
+          "game": { ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid" },
+          "actions": {
+            ".write": "auth != null && root.child('rooms').child($room).child('host').val() == auth.uid",
+            "$id": {
+              ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || (!newData.exists() && root.child('rooms').child($room).child('host').val() == auth.uid))"
+            }
+          }
+        },
         "chat": {
           "$msg": {
             ".write": "auth != null && ((!data.exists() && newData.child('uid').val() == auth.uid) || !newData.exists())",
