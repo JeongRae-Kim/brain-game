@@ -384,3 +384,8 @@ body.chat-quick-only .chat-form { display: none; }
 #mighty-card.mt-waiting .mt-line { font-size: 18px; font-weight: 800; color: var(--accent); }
 .mt-seat .away { color: #b03a2e; font-weight: 700; }
 .mt-seat .mt-join { margin: 6px 0 0; min-height: 40px; font-size: 14px; padding: 0 6px; background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn.kakao-btn { background: #fee500; color: #191919; border-color: #f0d800; font-weight: 800; }
+.mt-head .btn.kakao-btn { font-size: 14px; }
+.mt-head { flex-wrap: wrap; }
+.mt-head > span { flex: 1 1 auto; }
+.mt-head .btn { white-space: nowrap; }

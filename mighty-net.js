@@ -150,6 +150,7 @@ export function setupMightyNet(deps) {
       c.appendChild(el("p", "mt-status", `설정: ${lengthText(setupData.len)} · ${SPEEDS[setupData.opts.speed]?.label || ""}`));
       c.appendChild(el("p", "note", "자리에 앉으면 설정을 바꾸고 시작할 수 있어요"));
     }
+    c.appendChild(inviteBtn());
     c.appendChild(rulesBox());
     const back = el("button", "btn", "대기실로");
     back.addEventListener("click", close);
@@ -196,6 +197,11 @@ export function setupMightyNet(deps) {
       });
       header.appendChild(stop);
     }
+    if (st.phase !== "matchEnd" && st.players.some(p => p.ai)) {
+      const ib = inviteBtn();
+      ib.textContent = "💬 카톡 초대";
+      header.appendChild(ib);
+    }
     tbl = runTable({
       view, header, getState: () => st, me: myIdx, toast: deps.toast, multi: true,
       submit: send,
@@ -215,6 +221,24 @@ export function setupMightyNet(deps) {
       again.addEventListener("click", endTable);
       view.appendChild(again);
     }
+  }
+
+  // 카톡으로 초대
+  function inviteBtn() {
+    const b = el("button", "btn kakao-btn", "💬 카톡으로 초대하기");
+    b.addEventListener("click", () => {
+      const me_ = (deps.myName() || "").slice(0, 10) || "가족";
+      let text;
+      if (playing()) {
+        const free = st.players.filter(p => p.ai).length;
+        text = `🃏 ${me_}님이 마이티 탁자에 초대했어요!\n지금 ${st.dealNo}판째 진행 중` + (free ? ` · 컴퓨터 자리 ${free}개 (들어와서 '컴퓨터 대신 앉기')` : "");
+      } else {
+        const n = seats.filter(Boolean).length;
+        text = `🃏 ${me_}님이 마이티 탁자에 초대했어요!\n빈자리 ${5 - n}개 · 들어와서 자리에 앉아 주세요`;
+      }
+      deps.invite?.(text, "탁자로 가기");
+    });
+    return b;
   }
 
   // 게임을 끝내고, 나간 사람 자리는 비움

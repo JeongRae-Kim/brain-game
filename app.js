@@ -17,6 +17,7 @@ import { playBlocks } from "./ui-blocks.js";
 import { playMaze } from "./ui-maze.js";
 import { openMightyPractice } from "./ui-mighty.js";
 import { setupMightyNet } from "./mighty-net.js";
+import { loadKakao, sendInvite, inviteUrl } from "./kakao-share.js";
 const ARCADE = { shooter: playShooter, brick: playBrick, blocks: playBlocks, maze: playMaze };
 import { LEVEL_NAMES, WORDS } from "./words.js";
 import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
@@ -155,11 +156,14 @@ function join() {
   mightyNet = setupMightyNet({
     db, ref, set, push, onValue, onDisconnect, get, ROOM, toast, sysChat,
     uid: () => uid, myName: () => myName, isHost: () => hostUid === uid, playersOf: () => players,
-    show, onView: () => { show("view-lobby"); renderLobby(); }
+    show, onView: () => { show("view-lobby"); renderLobby(); },
+    invite: (text, button) => sendInvite({ text, url: inviteUrl(ROOM, "mighty"), button, toast })
   });
   mightyNet.hostChanged();
 
   show("view-lobby");
+  // 초대장으로 들어오면 바로 마이티 탁자로
+  if (params.get("go") === "mighty") setTimeout(() => mightyNet.open(), 600);
 }
 
 function hostOnline() {
@@ -330,13 +334,12 @@ $("start-btn").addEventListener("click", async () => {
   }
 });
 
-$("share-btn").addEventListener("click", async () => {
-  const url = location.origin + location.pathname + "?room=" + ROOM;
-  try {
-    if (navigator.share) { await navigator.share({ title: "가족 두뇌게임", url }); return; }
-  } catch { /* 취소 */ }
-  try { await navigator.clipboard.writeText(url); toast("링크를 복사했어요"); }
-  catch { prompt("이 링크를 복사하세요", url); }
+loadKakao();
+$("share-btn").addEventListener("click", () => {
+  sendInvite({
+    text: `🧠 ${myName || "가족"}님이 두뇌게임에 초대했어요!\n같이 퍼즐 풀고 마이티도 쳐요 (방: ${ROOM})`,
+    url: inviteUrl(ROOM), button: "게임 들어가기", toast
+  });
 });
 
 $("rename-btn").addEventListener("click", askName);
