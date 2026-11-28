@@ -323,6 +323,10 @@ function strength(hand, trump, fixed) {
 
 export function aiAction(st, p, rand = Math.random) {
   const h = st.hands[p];
+  const lvl = aiLevelOf(st, p);
+  if (lvl === "high" && st.phase === "bid") return aiBidHigh(st, p, rand);
+  if (lvl === "high" && st.phase === "kitty") return aiKittyHigh(st, p);
+  if (lvl === "high" && st.phase === "friend") return aiFriendHigh(st, p);
   if (st.phase === "bid") {
     if (canDealMiss(st, p) && rand() < 0.5) return { kind: "bid", action: "dealmiss" };
     let best = null;
@@ -437,7 +441,7 @@ function aiPlay(st, p, rand) {
 }
 
 // 컴퓨터 실력: basic(초급) / mid(중급). 시험용으로 자리별 실력(st.aiSeats)도 받음
-export const AI_LEVELS = { basic: "초급", mid: "중급" };
+export const AI_LEVELS = { basic: "초급", mid: "중급", high: "고급" };
 export const aiLevelOf = (st, p) => st.aiSeats?.[p] || st.opts?.aiLevel || "mid";
 
 // ---------------------------------------------------------------------
@@ -630,6 +634,97 @@ function aiPlayMid(st, p, rand) {
   if (dump.length) return { card: dump[0] };
   const nonBig = sortLow(st, legal.filter(c => c !== m && c !== "JK"));
   return { card: (nonBig.length ? nonBig : sortLow(st, legal))[0] };
+}
+
+// ---------------------------------------------------------------------
+// 고급: 공약·주공 판단 (중급 카드 내기 + 기대 점수로 공약)
+// 패 특징으로 "주공 편이 먹을 점수 카드 장수"를 어림 — 컴퓨터끼리 12,500판 결과로 맞춘 식
+// ---------------------------------------------------------------------
+const W = { c: 6.79, mighty: 1.672, joker: 2.004, tlen: 0.728, tlen2: 0.358, tA: 0.911, tK: 0.861, tQ: 0.66, tJ: 0.353,
+  sA: 1.129, sK: 0.61, void: 0.629, single: 0.341, nt: 1.796, pts: 0.075 };
+const SD = 3.0;
+function handFeats(hand, s, fixed) {
+  const m = fixed ? "S14" : mightyOf(s === "N" ? "N" : s);
+  const has = c => hand.includes(c);
+  const cnt = t => hand.filter(c => c !== m && c !== "JK" && suitOf(c) === t).length;
+  const f = { mighty: has(m) ? 1 : 0, joker: has("JK") ? 1 : 0, pts: hand.filter(isPoint).length };
+  if (s !== "N") {
+    const L = cnt(s);
+    const side = SUITS.filter(t => t !== s);
+    Object.assign(f, { tlen: L, tlen2: Math.max(0, L - 4), tA: has(s + "14") && s + "14" !== m ? 1 : 0, tK: has(s + "13") ? 1 : 0,
+      tQ: has(s + "12") ? 1 : 0, tJ: has(s + "11") ? 1 : 0, sA: side.filter(t => has(t + "14") && t + "14" !== m).length,
+      sK: side.filter(t => has(t + "13")).length, void: side.filter(t => cnt(t) === 0).length * (L >= 3 ? 1 : 0),
+      single: side.filter(t => cnt(t) === 1).length * (L >= 3 ? 1 : 0), nt: 0 });
+  } else {
+    Object.assign(f, { tlen: 0, tlen2: 0, tA: 0, tK: 0, tQ: 0, tJ: 0, sA: SUITS.filter(t => has(t + "14") && t + "14" !== m).length,
+      sK: SUITS.filter(t => has(t + "13")).length, void: 0, single: SUITS.filter(t => cnt(t) <= 1).length, nt: 1 });
+  }
+  return f;
+}
+const expectGot = (hand, s, fixed) => { const f = handFeats(hand, s, fixed); return Object.keys(W).reduce((a, k) => a + W[k] * (k === "c" ? 1 : f[k] || 0), 0); };
+// 주공이 받을 점수의 기댓값 (먹을 장수가 정규분포라고 보고)
+function bidEV(E, suit, n, noFriend = false) {
+  const mult = (suit === "N" ? 2 : 1) * (noFriend ? 2 : 1);
+  let ev = 0, tot = 0;
+  for (let g = 0; g <= 20; g++) {
+    const pr = Math.exp(-((g - E) ** 2) / (2 * SD * SD));
+    const V = (g >= n ? (g - n) + (n - MIN_BID) * 2 + 1 : -(n - g)) * mult;
+    ev += pr * V * (noFriend ? 4 : 2); tot += pr;
+  }
+  return ev / tot;
+}
+function aiBidHigh(st, p, rand) {
+  const h = st.hands[p], fixed = st.opts?.mightyFixed;
+  if (canDealMiss(st, p) && rand() < 0.5) return { kind: "bid", action: "dealmiss" };
+  const lastChance = !highestBid(st).best && st.bids.filter(b => b === "pass").length === N - 1;
+  let best = null;
+  for (const s of [...SUITS, "N"]) {
+    const E = expectGot(h, s, fixed);
+    for (let n = s === "N" ? MIN_BID_NT : MIN_BID; n <= MAX_BID; n++) {
+      if (!bidOk(st, { suit: s, n })) continue;
+      const ev = bidEV(E, s, n);
+      if (!best || ev > best.ev) best = { suit: s, n, ev };
+    }
+  }
+  if (best && (best.ev > 0 || lastChance)) return { kind: "bid", action: { suit: best.suit, n: best.n } };
+  return { kind: "bid", action: "pass" };
+}
+// 주공: 13장 중 버릴 3장 + 기루다 바꾸기(+2장)를 기대 점수로 고름
+function bestDiscards(hand, s, fixed) {
+  const m = fixed ? "S14" : mightyOf(s === "N" ? "N" : s);
+  let best = null;
+  for (let i = 0; i < hand.length; i++) for (let j = i + 1; j < hand.length; j++) for (let k = j + 1; k < hand.length; k++) {
+    const d = [hand[i], hand[j], hand[k]];
+    if (d.includes(m) || d.includes("JK")) continue;
+    const rest = hand.filter(c => !d.includes(c));
+    const sc = expectGot(rest, s, fixed) - 0.35 * d.filter(isPoint).length;
+    if (!best || sc > best.sc) best = { d, sc, E: sc - 1 };      // 남은 3장을 이미 받았으니 1장만큼 덜어 냄
+  }
+  return best;
+}
+function aiKittyHigh(st, p) {
+  const h = st.hands[p], fixed = st.opts?.mightyFixed, n = st.contract.n, cur = st.contract.suit;
+  let pick = { ...bestDiscards(h, cur, fixed), suit: cur };
+  pick.ev = bidEV(pick.E, cur, n);
+  if (n + 2 <= MAX_BID) {
+    for (const s of [...SUITS, "N"]) {
+      if (s === cur) continue;
+      const b = bestDiscards(h, s, fixed);
+      const ev = bidEV(b.E, s, n + 2);
+      if (ev > pick.ev + 1) pick = { ...b, suit: s, ev };
+    }
+  }
+  return { kind: "kitty", discards: pick.d, newTrump: pick.suit !== cur ? pick.suit : null };
+}
+function aiFriendHigh(st, p) {
+  const h = st.hands[p], fixed = st.opts?.mightyFixed, n = st.contract.n, s = st.contract.suit;
+  const E = expectGot(h, s, fixed) - 1;
+  // 아주 강한 패면 노프렌드(점수 2배) — 프렌드 몫만큼(약 3.5장) 덜 먹는다고 봄
+  if (bidEV(E - 3.5, s, n, true) > bidEV(E, s, n) + 2) return { kind: "friend", spec: { type: "none" } };
+  const m = mightyCard(st);
+  const pick = [m, "JK", s !== "N" ? s + "14" : null, s !== "N" ? s + "13" : null, "S14", "D14", "H14", "C14"]
+    .find(c => c && !h.includes(c) && !st.discards.includes(c));
+  return { kind: "friend", spec: pick ? { type: "card", card: pick } : { type: "first" } };
 }
 
 // 컴퓨터 한 수 적용
