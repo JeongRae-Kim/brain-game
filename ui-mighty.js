@@ -40,7 +40,7 @@ const LENGTHS = [["d3", "3판"], ["d5", "5판"], ["d10", "10판"], ["m20", "20�
 export const lengthOf = k => (k[0] === "d" ? { deals: Number(k.slice(1)) } : { minutes: Number(k.slice(1)) });
 export const lengthText = k => (LENGTHS.find(x => x[0] === k) || [0, k])[1];
 
-function cardEl(c, { small = false, playable = false, picked = false, onClick } = {}) {
+function cardEl(c, { small = false, playable = false, picked = false, onClick, mark } = {}) {
   const b = el("button", "mc" + (small ? " small" : "") + (red(c) ? " red" : "") + (c === "JK" ? " joker" : "")
     + (playable ? " ok" : "") + (picked ? " picked" : ""));
   if (c === "JK") b.textContent = "🃏";
@@ -48,6 +48,7 @@ function cardEl(c, { small = false, playable = false, picked = false, onClick } 
     b.appendChild(el("span", "r", M.RANK_TXT[M.rankOf(c)] || M.rankOf(c)));
     b.appendChild(el("span", "s", M.SUIT_SYM[M.suitOf(c)]));
   }
+  if (mark) b.appendChild(el("span", "mk", mark));
   if (onClick) b.addEventListener("click", onClick);
   else b.disabled = true;
   return b;
@@ -341,15 +342,18 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
     const myTurnPlay = st.phase === "play" && st.turn === me && !showTrick && !pendingCard;
     const legal = myTurnPlay ? M.legalPlays(st, me) : [];
     const discarding = st.phase === "kitty" && st.contract.declarer === me;
+    const mCard = st.trump ? M.mightyCard(st) : null, cCard = st.trump ? M.callCardOf(st.trump) : null;
+    const markOf = c => (c === mCard ? "M" : c === cCard ? "콜" : undefined);
     for (const c of h) {
+      const mark = markOf(c);
       if (discarding) {
-        d.appendChild(cardEl(c, { playable: true, picked: picks.includes(c), onClick: () => {
+        d.appendChild(cardEl(c, { mark, playable: true, picked: picks.includes(c), onClick: () => {
           picks = picks.includes(c) ? picks.filter(x => x !== c) : picks.length < 3 ? picks.concat(c) : picks;
           render();
         } }));
       } else if (myTurnPlay && legal.includes(c)) {
-        d.appendChild(cardEl(c, { playable: true, onClick: () => playCard(c) }));
-      } else d.appendChild(cardEl(c));
+        d.appendChild(cardEl(c, { mark, playable: true, onClick: () => playCard(c) }));
+      } else d.appendChild(cardEl(c, { mark }));
     }
     return d;
   }

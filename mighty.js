@@ -238,7 +238,7 @@ export function applyPlay(st, p, card, opts = {}) {
   // 판 끝
   const { who } = currentWinner(st);
   for (const x of t.cards) if (isPoint(x.card)) st.taken[who].push(x.card);
-  st.lastTrick = { cards: t.cards, winner: who, trickNo: st.trickNo };
+  st.lastTrick = { cards: t.cards, winner: who, trickNo: st.trickNo, called: t.called };
   if (f.type === "first" && st.trickNo === 1) {
     f.idx = who === st.contract.declarer ? null : who;
     f.revealed = true;
@@ -297,7 +297,7 @@ export function nextDeal(st) {
 const sortLow = (st, cards) => cards.slice().sort((a, b) => lowKey(st, a) - lowKey(st, b));
 function lowKey(st, c) {
   if (c === mightyCard(st)) return 900;
-  if (c === "JK") return 800;
+  if (c === "JK") return st.trickNo >= 10 ? 1 : 800;   // 마지막 트릭의 조커는 힘이 없으니 버릴 카드
   let k = rankOf(c);
   if (st.trump !== "N" && suitOf(c) === st.trump) k += 300;
   if (isPoint(c)) k += 50;
@@ -376,12 +376,23 @@ function aiPlay(st, p, rand) {
     }
     // 먼저 낼 때
     let card;
+    // 9번째 트릭: 조커를 10번째(힘 없음)까지 들고 있지 않음
+    if (st.trickNo === 9 && legal.includes("JK")) {
+      const cnt = s => st.hands[p].filter(c => suitOf(c) === s).length;
+      const js = iAmGov && st.trump !== "N" ? st.trump : SUITS.slice().sort((a, b) => cnt(b) - cnt(a))[0];
+      return { card: "JK", opts: { jokerSuit: js } };
+    }
+    // 야당: 조커가 아직 안 나왔고 내게 조커가 없으면 콜 카드로 조커를 빼냄
+    if (!iAmGov && st.trickNo >= 2 && st.trickNo <= 9 && !st.jokerOut && legal.includes(callC)
+        && !st.hands[p].includes("JK") && (st.friend.type === "card" && st.friend.card === "JK" ? true : rand() < 0.7)) {
+      return { card: callC, opts: { call: true } };
+    }
     const trumps = legal.filter(c => st.trump !== "N" && suitOf(c) === st.trump && c !== m);
     const aces = legal.filter(c => rankOf(c) === 14 && c !== m && suitOf(c) !== st.trump);
     if (iAmGov && st.trickNo > 1 && trumps.length >= 2) card = trumps.sort((a, b) => rankOf(b) - rankOf(a))[0];
     else if (aces.length) card = aces[0];
     else {
-      const plain = legal.filter(c => c !== "JK" && c !== m);
+      const plain = legal.filter(c => c !== "JK" && c !== m && (iAmGov ? c !== callC || st.jokerOut : true));
       const pool = plain.length ? plain : legal;
       const cnt = s => pool.filter(c => suitOf(c) === s).length;
       card = pool.slice().sort((a, b) => (cnt(suitOf(b)) - cnt(suitOf(a))) || (lowKey(st, a) - lowKey(st, b)))[0];
@@ -391,7 +402,8 @@ function aiPlay(st, p, rand) {
       const cnt = s => st.hands[p].filter(c => suitOf(c) === s).length;
       opts.jokerSuit = SUITS.slice().sort((a, b) => cnt(b) - cnt(a))[0];
     }
-    if (card === callCardOf(st.trump) && !st.hands[p].includes("JK")) opts.call = rand() < 0.6;
+    // 주공 편은 자기 편 조커를 뺏지 않도록 콜하지 않음 (신호 옵션은 위에서 따로)
+    if (card === callC && !st.hands[p].includes("JK")) opts.call = !iAmGov && !st.jokerOut;
     return { card, opts };
   }
   const { who, best } = currentWinner(st);
@@ -402,6 +414,8 @@ function aiPlay(st, p, rand) {
     const w = sortLow(st, legal.filter(c => power(st, c) > best && c !== "JK"));
     if (w.length) return { card: w[0] };
   }
+  // 9번째 트릭에 힘 있는 조커가 있으면 지금 씀 (10번째엔 힘이 없음)
+  if (st.trickNo === 9 && legal.includes("JK") && jokerActive(st) && !t.called && power(st, "JK") > best) return { card: "JK" };
   if (ally(who) && (last || best >= 900)) {
     // 우리 편이 이기고 있으면 점수 카드를 얹어 줌
     const give = sortLow(st, legal.filter(c => isPoint(c) && power(st, c) <= best && c !== m && c !== "JK"));
@@ -409,8 +423,10 @@ function aiPlay(st, p, rand) {
     return { card: sortLow(st, legal)[0] };
   }
   if (ally(who)) return { card: sortLow(st, legal)[0] };
+  // 상대가 이기고 있을 때: 점수 카드가 1장이라도 걸리거나 후반이면 마이티·조커도 씀
+  const big = pts >= 1 || st.trickNo >= 8;
   const winners = sortLow(st, legal.filter(c => power(st, c) > best))
-    .filter(c => (c !== m && c !== "JK") || pts >= 2 || last);
+    .filter(c => (c !== m && c !== "JK") || big);
   if (winners.length) return { card: winners[0] };
   const dump = sortLow(st, legal.filter(c => !isPoint(c)));
   return { card: (dump.length ? dump : sortLow(st, legal))[0] };
