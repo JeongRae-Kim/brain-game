@@ -364,3 +364,7 @@ body.chat-quick-only .chat-form { display: none; }
 .mc { position: relative; }
 .mc .mk { position: absolute; top: -7px; right: -7px; background: #c0392b; color: #fff; font-size: 11px; font-weight: 800; border-radius: 9px; padding: 1px 5px; line-height: 1.4; }
 .mc .mk:empty { display: none; }
+.mt-info .trump-chip { background: #2e6b4f; color: #fff; font-weight: 800; }
+.mt-info .trump-chip.red { background: #b03a2e; color: #fff; }
+.mc.trump { background: #fff6d6; border-color: #e0b100; }
+.mc.trump:disabled { background: #fbf3dc; }

@@ -40,6 +40,7 @@ const LENGTHS = [["d3", "3판"], ["d5", "5판"], ["d10", "10판"], ["m20", "20�
 export const lengthOf = k => (k[0] === "d" ? { deals: Number(k.slice(1)) } : { minutes: Number(k.slice(1)) });
 export const lengthText = k => (LENGTHS.find(x => x[0] === k) || [0, k])[1];
 
+const trumpTag = (on, b) => { if (on) b.classList.add("trump"); return b; };
 function cardEl(c, { small = false, playable = false, picked = false, onClick, mark } = {}) {
   const b = el("button", "mc" + (small ? " small" : "") + (red(c) ? " red" : "") + (c === "JK" ? " joker" : "")
     + (playable ? " ok" : "") + (picked ? " picked" : ""));
@@ -287,7 +288,10 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
     const d = el("div", "mt-info");
     const parts = [`${st.dealNo}판째` + (st.length.deals ? `/${st.length.deals}` : st.length.minutes ? ` · ${st.length.minutes}분` : "")];
     if (st.contract) {
-      parts.push(`${st.players[st.contract.declarer].name} ${M.bidText(st.contract)}`);
+      const tr = st.contract.suit;
+      parts.push({ cls: "trump-chip" + (tr === "D" || tr === "H" ? " red" : ""),
+        text: tr === "N" ? "노기루다" : `기루다 ${M.SUIT_SYM[tr]}` });
+      parts.push(`공약 ${st.contract.n}장 (주공 ${st.players[st.contract.declarer].name})`);
       const f = st.friend;
       if (f) parts.push(f.type === "none" ? "노프렌드" : f.type === "first" ? (f.revealed ? `프렌드 ${f.idx === null ? "없음" : st.players[f.idx].name}` : "초구 프렌드")
         : f.type === "card" ? `프렌드 ${M.cardText(f.card)}${f.revealed ? ` = ${st.players[f.idx].name}` : ""}` : `프렌드 ${st.players[f.idx].name}`);
@@ -300,7 +304,7 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
       const { best, who } = M.highestBid(st);
       parts.push(best ? `최고 공약 ${st.players[who].name} ${M.bidText(best)}` : "공약을 불러 주세요");
     }
-    for (const t of parts) d.appendChild(el("span", null, t));
+    for (const t of parts) d.appendChild(typeof t === "string" ? el("span", null, t) : el("span", t.cls, t.text));
     return d;
   }
   function center() {
@@ -346,14 +350,15 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
     const markOf = c => (c === mCard ? "M" : c === cCard ? "콜" : undefined);
     for (const c of h) {
       const mark = markOf(c);
+      const isTrump = st.trump && st.trump !== "N" && c !== "JK" && M.suitOf(c) === st.trump && c !== mCard;
       if (discarding) {
-        d.appendChild(cardEl(c, { mark, playable: true, picked: picks.includes(c), onClick: () => {
+        d.appendChild(trumpTag(isTrump, cardEl(c, { mark, playable: true, picked: picks.includes(c), onClick: () => {
           picks = picks.includes(c) ? picks.filter(x => x !== c) : picks.length < 3 ? picks.concat(c) : picks;
           render();
-        } }));
+        } })));
       } else if (myTurnPlay && legal.includes(c)) {
-        d.appendChild(cardEl(c, { mark, playable: true, onClick: () => playCard(c) }));
-      } else d.appendChild(cardEl(c, { mark }));
+        d.appendChild(trumpTag(isTrump, cardEl(c, { mark, playable: true, onClick: () => playCard(c) })));
+      } else d.appendChild(trumpTag(isTrump, cardEl(c, { mark })));
     }
     return d;
   }
