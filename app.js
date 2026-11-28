@@ -18,6 +18,7 @@ import { playMaze } from "./ui-maze.js";
 import { openMightyPractice } from "./ui-mighty.js";
 import { setupMightyNet } from "./mighty-net.js";
 import { loadKakao, sendInvite, inviteUrl } from "./kakao-share.js";
+import { initReplay, saveReplay, openReplayList } from "./replay.js";
 const ARCADE = { shooter: playShooter, brick: playBrick, blocks: playBlocks, maze: playMaze };
 import { LEVEL_NAMES, WORDS } from "./words.js";
 import { makeCrossword, makeAnagram, makeWordle, engList, ENG_MIN } from "./english.js";
@@ -41,6 +42,9 @@ const store = {
 
 function show(view) {
   for (const v of document.querySelectorAll(".view")) v.hidden = v.id !== view;
+  // 마이티 화면에서는 제목을 "치매 예방 게임"으로
+  const h1 = document.querySelector("header h1");
+  if (h1) h1.textContent = view === "view-mighty" || view === "view-replay" ? "🧠 치매 예방 게임" : "🧠 가족 두뇌게임";
 }
 function toast(msg) {
   const t = $("toast");
@@ -157,8 +161,12 @@ function join() {
     db, ref, set, push, onValue, onDisconnect, get, ROOM, toast, sysChat,
     uid: () => uid, myName: () => myName, isHost: () => hostUid === uid, playersOf: () => players,
     show, onView: () => { show("view-lobby"); renderLobby(); },
-    invite: (text, button) => sendInvite({ text, url: inviteUrl(ROOM, "mighty"), button, toast })
+    invite: (text, button) => sendInvite({ text, url: inviteUrl(ROOM, "mighty"), button, toast }),
+    saveReplay
   });
+  initReplay({ db, ref, push, get, set, ROOM, uid: () => uid, myName: () => myName, toast, show,
+    onBack: () => { show("view-lobby"); renderLobby(); } });
+  checkReplayAdmin();
   mightyNet.hostChanged();
 
   show("view-lobby");
@@ -808,6 +816,14 @@ $("admin-btn").addEventListener("click", async () => {
   $("admin-panel").hidden = !ok;
   if (ok) loadAdminCat();
 });
+// 📜 복기: 관리 코드를 넣은 기기에서만 버튼이 보임
+async function checkReplayAdmin() {
+  let ok = false;
+  try { ok = (await get(ref(db, `admins/${uid}`))).exists(); } catch { /* 권한 없음 */ }
+  $("replay-btn").hidden = !ok;
+}
+$("replay-btn").addEventListener("click", () => { show("view-replay"); openReplayList($("view-replay")); });
+
 $("admin-back").addEventListener("click", () => { show("view-lobby"); renderLobby(); });
 $("admin-cat").addEventListener("change", loadAdminCat);
 
@@ -819,6 +835,7 @@ $("admin-login-btn").addEventListener("click", async () => {
   for (const c of tries) {
     try {
       await set(ref(db, `admins/${uid}`), { code: c });
+      $("replay-btn").hidden = false;
       $("admin-login").hidden = true;
       $("admin-panel").hidden = false;
       loadAdminCat();
@@ -1208,6 +1225,7 @@ $("mighty-btn").addEventListener("click", () => {
   show("view-mighty");
   openMightyPractice({
     view: $("view-mighty"), myName, toast,
+    onDealEnd: st => saveReplay(st, "practice"),
     onExit: () => { show("view-lobby"); renderLobby(); },
     onMatchEnd: (st, me) => {
       const rank = st.players.map((_, i) => i).sort((a, b) => st.scores[b] - st.scores[a]).indexOf(me) + 1;

@@ -207,6 +207,7 @@ export function setupMightyNet(deps) {
       submit: send,
       onJoin: myIdx < 0 ? p => { send({ k: "join", seat: p, name: (deps.myName() || "손님").slice(0, 10) }); deps.toast("자리에 들어가는 중…"); } : null,
       onExit: close,
+      onDealEnd: s => { if (runnerUid() === me()) deps.saveReplay?.(s, "table"); },
       onMatchEnd: s => {
         if (runnerUid() !== me()) return;
         const ranked = s.players.map((p, i) => ({ p, i })).sort((a, b) => s.scores[b.i] - s.scores[a.i]);

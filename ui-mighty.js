@@ -144,7 +144,7 @@ export function aiMove(st, p) {
 }
 
 // ---------------- 연습판 ----------------
-export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) {
+export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd, onDealEnd }) {
   view.textContent = "";
   const state = { len: store.get("bg-mighty-len") || "d5", opts: loadOpts() };
   const setup = el("div", "card");
@@ -182,7 +182,7 @@ export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) 
       submit: a => { applyAction(st, 0, a); tbl.update(); runAI(); },
       onIdle: runAI,
       onExit: () => { clearTimeout(aiTimer); onExit(); },
-      onMatchEnd
+      onMatchEnd, onDealEnd
     });
     runAI();
   });
@@ -191,7 +191,7 @@ export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) 
 // ---------------- 탁자 그리기 ----------------
 // getState(): 지금 상태, me: 내 자리(-1 = 구경), submit(action): 행동 보내기
 // onIdle(): 트릭 결과 보여 주기가 끝났을 때 (연습판 컴퓨터 진행용)
-export function runTable({ view, getState, me, submit, toast, multi, onIdle, onExit, onMatchEnd, header, onJoin }) {
+export function runTable({ view, getState, me, submit, toast, multi, onIdle, onExit, onMatchEnd, header, onJoin, onDealEnd }) {
   let picks = [], newTrump = null, pendingCard = null, showTrick = null, lastShown = null;
   let bidSuit = null, bidN = null, saved = false, friendKnown = false, lastPhase = null;
   let flash = null, flashTimer = null, pauseTimer = null;
@@ -217,6 +217,7 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
   function update() {
     const st = getState();
     if (!st || !root.isConnected) return;
+    if (st.phase === "dealEnd") onDealEnd?.(st);
     const f = st.friend;
     if (f && f.revealed && !friendKnown && st.phase !== "bid") {
       friendKnown = true;

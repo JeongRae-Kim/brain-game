@@ -55,6 +55,10 @@ export function newDeal(st) {
   st.jokerOut = false;
   st.noJokerSignal = false;
   st.played = [];                            // 나온 카드 기록 (모두가 본 정보)
+  st.hands0 = st.hands.map(h => h.slice());  // 기보용: 처음 나눈 패
+  st.kitty0 = st.kitty.slice();
+  st.bidLog = [];                            // 기보용: 공약 순서
+  st.kittyLog = null;                        // 기보용: 버린 3장·기루다 바꾸기
   st.tricks = [];                            // 끝난 트릭 기록
   st.turn = (st.dealer + 1) % N;
   st.phase = "bid";
@@ -97,6 +101,7 @@ export function applyBid(st, p, action) {
     newDeal(st);
     return;
   }
+  (st.bidLog ||= []).push({ p, a: action });
   if (action === "pass") {
     st.bids[p] = "pass";
     say(st, `${nameOf(st, p)}: 패스`);
@@ -143,6 +148,7 @@ export function applyKitty(st, p, { discards, newTrump }) {
   }
   st.hands[p] = st.hands[p].filter(c => !discards.includes(c));
   st.discards = discards;
+  st.kittyLog = { discards: discards.slice(), newTrump: newTrump || null };
   st.phase = "friend";
 }
 
@@ -227,7 +233,10 @@ export function applyPlay(st, p, card, opts = {}) {
   }
   st.hands[p] = st.hands[p].filter(c => c !== card);
   t.cards.push({ p, card });
-  (st.played ||= []).push({ p, card, trickNo: st.trickNo, lead: t.leadSuit, pos: t.cards.length - 1 });
+  const rec = { p, card, trickNo: st.trickNo, lead: t.leadSuit, pos: t.cards.length - 1 };
+  if (rec.pos === 0 && card === "JK") rec.js = t.leadSuit;
+  if (rec.pos === 0 && t.called) rec.call = true;
+  (st.played ||= []).push(rec);
   if (card === "JK") st.jokerOut = true;
   // 약속 신호: 드러난 프렌드가 먼저 3·6·9를 내면 "조커 없음"
   if (t.cards.length === 1 && isSignalCard(card) && st.friend?.revealed && st.friend.idx === p && suitOf(card) !== st.trump) st.noJokerSignal = true;
