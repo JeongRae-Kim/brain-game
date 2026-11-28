@@ -54,6 +54,8 @@ export function newDeal(st) {
   st.lastTrick = null;
   st.jokerOut = false;
   st.noJokerSignal = false;
+  st.played = [];                            // 나온 카드 기록 (모두가 본 정보)
+  st.tricks = [];                            // 끝난 트릭 기록
   st.turn = (st.dealer + 1) % N;
   st.phase = "bid";
   st.dealResult = null;
@@ -225,6 +227,7 @@ export function applyPlay(st, p, card, opts = {}) {
   }
   st.hands[p] = st.hands[p].filter(c => c !== card);
   t.cards.push({ p, card });
+  (st.played ||= []).push({ p, card, trickNo: st.trickNo, lead: t.leadSuit, pos: t.cards.length - 1 });
   if (card === "JK") st.jokerOut = true;
   // 약속 신호: 드러난 프렌드가 먼저 3·6·9를 내면 "조커 없음"
   if (t.cards.length === 1 && isSignalCard(card) && st.friend?.revealed && st.friend.idx === p && suitOf(card) !== st.trump) st.noJokerSignal = true;
@@ -239,6 +242,7 @@ export function applyPlay(st, p, card, opts = {}) {
   const { who } = currentWinner(st);
   for (const x of t.cards) if (isPoint(x.card)) st.taken[who].push(x.card);
   st.lastTrick = { cards: t.cards, winner: who, trickNo: st.trickNo, called: t.called };
+  (st.tricks ||= []).push({ cards: t.cards.slice(), winner: who, trickNo: st.trickNo, lead: t.leadSuit });
   if (f.type === "first" && st.trickNo === 1) {
     f.idx = who === st.contract.declarer ? null : who;
     f.revealed = true;
@@ -348,7 +352,7 @@ export function aiAction(st, p, rand = Math.random) {
       .find(c => c && !h.includes(c) && !st.discards.includes(c));
     return { kind: "friend", spec: pick ? { type: "card", card: pick } : { type: "first" } };
   }
-  if (st.phase === "play") return { kind: "play", ...aiPlay(st, p, rand) };
+  if (st.phase === "play") return { kind: "play", ...(aiLevelOf(st, p) === "basic" ? aiPlay(st, p, rand) : aiPlayMid(st, p, rand)) };
   return null;
 }
 
@@ -430,6 +434,202 @@ function aiPlay(st, p, rand) {
   if (winners.length) return { card: winners[0] };
   const dump = sortLow(st, legal.filter(c => !isPoint(c)));
   return { card: (dump.length ? dump : sortLow(st, legal))[0] };
+}
+
+// 컴퓨터 실력: basic(초급) / mid(중급). 시험용으로 자리별 실력(st.aiSeats)도 받음
+export const AI_LEVELS = { basic: "초급", mid: "중급" };
+export const aiLevelOf = (st, p) => st.aiSeats?.[p] || st.opts?.aiLevel || "mid";
+
+// ---------------------------------------------------------------------
+// 중급: 나온 카드 기억 + 편 판단 + 자리 순서를 보고 냄 (다른 사람 패는 보지 않음)
+// ---------------------------------------------------------------------
+function memoryOf(st, p) {
+  const played = st.played || [];
+  const seen = new Set(played.map(x => x.card));
+  for (const c of st.hands[p]) seen.add(c);
+  if (p === st.contract.declarer) for (const c of st.discards) seen.add(c);
+  const m = mightyCard(st);
+  // 무늬가 떨어진 사람: 그 무늬가 선인데 다른 무늬를 냄 (마이티·조커는 언제든 낼 수 있으니 제외)
+  const void_ = Array.from({ length: N }, () => new Set());
+  for (const x of played) {
+    if (x.pos === 0 || !x.lead) continue;
+    if (x.card === "JK" || x.card === m) continue;
+    if (suitOf(x.card) !== x.lead) void_[x.p].add(x.lead);
+  }
+  const unseen = fullDeck().filter(c => !seen.has(c));
+  const trump = st.trump;
+  const trumpsOut = trump && trump !== "N" ? unseen.filter(c => suitOf(c) === trump && c !== m).length : 0;
+  // 이 카드가 그 무늬에서 남은 것 중 가장 높은지
+  const isBoss = c => {
+    if (c === m) return true;
+    if (c === "JK") return false;
+    const s = suitOf(c);
+    return !unseen.some(u => u !== m && suitOf(u) === s && rankOf(u) > rankOf(c));
+  };
+  return { seen, unseen, void_, trumpsOut, isBoss, mightyGone: seen.has(m) && !st.hands[p].includes(m),
+    callGone: seen.has(callCardOf(trump)) && !st.hands[p].includes(callCardOf(trump)) };
+}
+
+// 각 사람이 내 편인지: "ally" / "enemy" / "unknown"(숨은 프렌드일 수도 있는 사람)
+function sidesOf(st, p) {
+  const d = st.contract.declarer, f = st.friend;
+  const iAmSecretFriend = f.type === "card" && !f.revealed && st.hands[p].includes(f.card);
+  const iAmGov = p === d || (f.revealed && f.idx === p) || iAmSecretFriend;
+  const friendKnown = f.type === "none" || f.revealed || (f.type === "first" && st.trickNo > 1);
+  // 숨은 프렌드 추리: 주공이 이기는 트릭에 점수 카드를 얹어 준 사람
+  const sus = new Array(N).fill(0);
+  for (const t of st.tricks || []) {
+    if (t.winner !== d) continue;
+    for (const x of t.cards) if (x.p !== d && isPoint(x.card) && x.pos !== 0) sus[x.p] += 1;
+  }
+  return Array.from({ length: N }, (_, q) => {
+    if (q === p) return "ally";
+    if (q === d) return iAmGov ? "ally" : "enemy";
+    if (friendKnown) {
+      const qGov = f.type !== "none" && f.idx === q;
+      return qGov === iAmGov ? "ally" : "enemy";
+    }
+    if (iAmSecretFriend) return "enemy";            // 나 말고는 모두 야당
+    if (iAmGov) return "unknown";                     // 주공: 누가 프렌드인지 모름
+    // 야당: 주공 편일 낌새가 짙으면 상대로 봄
+    const maxSus = Math.max(...sus.filter((_, i) => i !== p && i !== d));
+    return sus[q] >= 2 && sus[q] === maxSus ? "enemy" : "unknown";
+  });
+}
+
+function aiPlayMid(st, p, rand) {
+  const legal = legalPlays(st, p);
+  const t = st.trick;
+  const m = mightyCard(st);
+  const callC = callCardOf(st.trump);
+  const mem = memoryOf(st, p);
+  const side = sidesOf(st, p);
+  const iAmGov = p === st.contract.declarer || side[st.contract.declarer] === "ally";
+  const isDecl = p === st.contract.declarer;
+  const sig = st.opts?.aiSignal;
+  const hasJK = st.hands[p].includes("JK");
+  const trump = st.trump !== "N" ? st.trump : null;
+  const order = [];                      // 아직 낼 사람들 (나 다음부터)
+  for (let k = t.cards.length + 1; k < N; k++) order.push((t.leader + k) % N);
+  const after = order.filter(q => q !== p);
+  const enemyAfter = after.some(q => side[q] !== "ally");
+
+  // ---------- 먼저 낼 때 ----------
+  if (!t.cards.length) {
+    if (sig && st.trickNo >= 2 && st.trickNo <= 9 && !st.jokerOut) {
+      if (isDecl && st.noJokerSignal && legal.includes(callC)) return { card: callC, opts: { call: true } };
+      if (!isDecl && st.friend.revealed && st.friend.idx === p && !hasJK && !st.noJokerSignal) {
+        const s9 = sortLow(st, legal.filter(c => isSignalCard(c) && suitOf(c) !== st.trump && !isPoint(c)));
+        if (s9.length) return { card: s9[0] };
+      }
+    }
+    const jokerSuitFor = () => {
+      if (iAmGov && trump && mem.trumpsOut > 0) return trump;            // 조커로 선을 잡아 기루다를 부름
+      const cnt = s => st.hands[p].filter(c => suitOf(c) === s).length;
+      return SUITS.slice().sort((a, b) => cnt(b) - cnt(a))[0];
+    };
+    // 조커: 9번째엔 반드시, 주공 편은 콜 카드가 남아 있으면 중반(4~7)에 먼저 씀
+    if (legal.includes("JK") && jokerActive(st)) {
+      if (st.trickNo === 9) return { card: "JK", opts: { jokerSuit: jokerSuitFor() } };
+      if (iAmGov && !mem.callGone && st.trickNo >= 4 && st.trickNo <= 7 && !legal.includes(callC)) {
+        return { card: "JK", opts: { jokerSuit: jokerSuitFor() } };
+      }
+    }
+    // 야당: 조커가 안 나왔고 내게 없으면 콜 카드로 빼냄
+    if (!iAmGov && st.trickNo >= 2 && st.trickNo <= 9 && !st.jokerOut && legal.includes(callC) && !hasJK) {
+      return { card: callC, opts: { call: true } };
+    }
+    const declVoid = mem.void_[st.contract.declarer];
+    const enemies = [0, 1, 2, 3, 4].filter(q => side[q] === "enemy");
+    const enemyVoid = s => enemies.some(q => mem.void_[q].has(s));
+    const plainOf = arr => arr.filter(c => c !== "JK" && c !== m && !(c === callC && iAmGov && !st.jokerOut));
+    if (iAmGov) {
+      // 기루다 빼기: 다른 사람 손에 기루다가 남아 있는 동안만
+      const myTrumps = legal.filter(c => trump && suitOf(c) === trump && c !== m);
+      if (st.trickNo > 1 && trump && mem.trumpsOut > 0 && myTrumps.length >= 2) {
+        const bosses = myTrumps.filter(mem.isBoss);
+        if (bosses.length) return { card: bosses.sort((a, b) => rankOf(b) - rankOf(a))[0] };
+        if (myTrumps.length >= 3) return { card: sortLow(st, myTrumps)[0] };
+      }
+      // 제일 높은 카드(보스)부터: 상대가 잘라 먹을 무늬는 피함 (상대 기루다가 남았을 때)
+      const safe = c => !(mem.trumpsOut > 0 && enemyVoid(suitOf(c)));
+      const boss = plainOf(legal).filter(c => (!trump || suitOf(c) !== trump) && mem.isBoss(c) && safe(c));
+      if (boss.length) return { card: boss.sort((a, b) => rankOf(b) - rankOf(a))[0] };
+    } else {
+      // 야당: 보스 카드, 단 주공이 떨어진 무늬는 피함
+      const boss = plainOf(legal).filter(c => (!trump || suitOf(c) !== trump) && mem.isBoss(c) && !(declVoid.has(suitOf(c)) && mem.trumpsOut > 0));
+      if (boss.length) return { card: boss.sort((a, b) => rankOf(b) - rankOf(a))[0] };
+    }
+    // 그 밖: 점수 카드가 아닌 낮은 카드, 상대가 잘라 먹을 무늬는 피함
+    let pool = plainOf(legal);
+    if (!pool.length) pool = legal.slice();
+    const risky = s => (iAmGov ? enemyVoid(s) : declVoid.has(s)) && mem.trumpsOut > 0;
+    const ranked = pool.slice().sort((a, b) =>
+      (risky(suitOf(a)) - risky(suitOf(b))) || (isPoint(a) - isPoint(b))
+      || ((trump && suitOf(a) === trump) - (trump && suitOf(b) === trump)) || (lowKey(st, a) - lowKey(st, b)));
+    const card = ranked[0];
+    const opts = {};
+    if (card === "JK") opts.jokerSuit = jokerSuitFor();
+    if (card === callC && !hasJK) opts.call = !iAmGov && !st.jokerOut;
+    return { card, opts };
+  }
+
+  // ---------- 따라 낼 때 ----------
+  const { who, best } = currentWinner(st);
+  const pts = t.cards.filter(x => isPoint(x.card)).length;
+  const last = !after.length;
+  const winSide = side[who];
+  const winCard = t.cards.find(x => x.p === who).card;
+  if (sig && isDecl && st.noJokerSignal && !st.jokerOut && st.hands[p].includes(callC) && st.trickNo < 9) {
+    const w = sortLow(st, legal.filter(c => power(st, c) > best && c !== "JK"));
+    if (w.length) return { card: w[0] };
+  }
+  const jkLive = legal.includes("JK") && jokerActive(st) && power(st, "JK") > best;
+  // 9번째 트릭: 조커가 10번째(힘 없음)에 남지 않게 지금 씀
+  if (st.trickNo === 9 && jkLive) return { card: "JK" };
+  // 지금 이기는 카드가 끝까지 버틸지 (뒤에 상대가 있으면 보스여야 함)
+  const holds = (c, pw) => {
+    if (last || !enemyAfter || c === m) return true;
+    if (c === "JK") return mem.mightyGone;
+    if (!mem.isBoss(c)) return false;
+    if (pw >= 500) return true;                                       // 가장 높은 기루다
+    // 가장 높은 보통 카드: 뒤의 상대가 이 무늬가 떨어져 잘라 먹을 수 있으면 불안
+    return mem.trumpsOut === 0 || after.every(q => side[q] === "ally" || !mem.void_[q].has(t.leadSuit));
+  };
+  if (winSide === "ally") {
+    const winHolds = holds(winCard, best);
+    if (winHolds) {
+      // 우리 편이 확실히 이기면 점수 카드를 얹음
+      const give = sortLow(st, legal.filter(c => isPoint(c) && power(st, c) <= best && c !== m && c !== "JK"));
+      if (give.length) return { card: give[give.length - 1] };
+    }
+    const low = sortLow(st, legal.filter(c => c !== m && c !== "JK" && !isPoint(c)));
+    return { card: (low.length ? low : sortLow(st, legal))[0] };
+  }
+  // 상대 또는 모르는 사람이 이기는 중
+  const worth = pts + after.length * 0.4;                       // 아직 더 걸릴 점수 기대치
+  const bigTrick = pts >= 2 || (pts >= 1 && st.trickNo >= 8) || (isPoint(winCard) && rankOf(winCard) >= 13)
+    || (iAmGov && hasJK && !mem.callGone && st.trickNo >= 4 && pts >= 1);
+  const cand = sortLow(st, legal.filter(c => power(st, c) > best));
+  for (const c of cand) {
+    const pw = power(st, c);
+    if (c === m) { if (bigTrick || (pts >= 1 && last) || st.trickNo >= 8) return { card: c }; continue; }
+    if (c === "JK") {
+      if (!bigTrick && !(pts >= 1 && last)) continue;
+      // 마이티가 아직 안 나왔고 뒤에 상대가 있으면 조커는 점수가 클 때만
+      if (!mem.mightyGone && enemyAfter && !st.hands[p].includes(m) && pts < 3 && st.trickNo < 8) continue;
+      return { card: c };
+    }
+    // 보통 카드: 모르는 사람이 이기는 중이면 점수가 걸렸을 때만 뺏음
+    if (winSide === "unknown" && pts === 0 && !last) continue;
+    if (isPoint(c) && !holds(c, pw)) continue;                   // 뺏길 점수 카드로는 이기려 하지 않음
+    if (holds(c, pw) || worth >= 1) return { card: c };
+  }
+  // 못 이기면: 점수 카드를 아끼고 가장 쓸모없는 카드를 버림
+  const dump = sortLow(st, legal.filter(c => !isPoint(c) && c !== m && c !== "JK"));
+  if (dump.length) return { card: dump[0] };
+  const nonBig = sortLow(st, legal.filter(c => c !== m && c !== "JK"));
+  return { card: (nonBig.length ? nonBig : sortLow(st, legal))[0] };
 }
 
 // 컴퓨터 한 수 적용

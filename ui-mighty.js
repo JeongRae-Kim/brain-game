@@ -7,7 +7,7 @@ export const SPEEDS = {
   fast: { label: "🐇 빠르게", ai: 750, bid: 1200, pause: 1300 }
 };
 export const DEFAULT_OPTS = {
-  speed: "slow", manualNext: true, showTaken: false, dealEndCards: false,
+  speed: "slow", aiLevel: "mid", manualNext: true, showTaken: false, dealEndCards: false,
   aiSignal: false, mightyFixed: false, chatQuick: false
 };
 const OPT_LABELS = [
@@ -77,6 +77,15 @@ export function optionsBox(state, { multi = false, onChange } = {}) {
     return b;
   });
   box.appendChild(sp);
+  box.appendChild(el("p", "note", "컴퓨터 실력"));
+  const lv = el("div", "seg");
+  const lvBtns = Object.entries(M.AI_LEVELS).map(([k, label]) => {
+    const b = el("button", "btn seg-btn" + (k === (state.opts.aiLevel || "mid") ? " selected" : ""), label + (k === "mid" ? " (기본)" : ""));
+    b.addEventListener("click", () => { state.opts.aiLevel = k; lvBtns.forEach(x => x.classList.toggle("selected", x === b)); onChange?.(); });
+    lv.appendChild(b);
+    return b;
+  });
+  box.appendChild(lv);
   const ul = el("ul", "set-list");
   for (const [k, label, hint] of OPT_LABELS) {
     if (multi && k === "manualNext") continue;
