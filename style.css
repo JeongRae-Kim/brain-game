@@ -368,3 +368,17 @@ body.chat-quick-only .chat-form { display: none; }
 .mt-info .trump-chip.red { background: #b03a2e; color: #fff; }
 .mc.trump { background: #fff6d6; border-color: #e0b100; }
 .mc.trump:disabled { background: #fbf3dc; }
+.mt-tally { margin-top: 8px; color: #fff; text-align: center; }
+.mt-tally .tl-line { font-size: 16px; font-weight: 800; }
+.mt-tally.big .tl-line { font-size: 22px; }
+.mt-tally .tl-gov { color: #ffe27a; }
+.mt-tally .tl-opp { color: #cfe8ff; }
+.mt-tally .tl-sub { font-size: 15px; opacity: .95; }
+.mt-tally.big .tl-sub { font-size: 18px; font-weight: 700; }
+.mt-tally .tl-note { font-size: 12px; opacity: .8; margin-top: 2px; }
+.mt-settle { background: #f7f1e6; border-radius: 12px; padding: 10px 12px; margin: 6px 0 10px; }
+.mt-settle .st-main { font-size: 18px; font-weight: 800; }
+.mt-settle .st-sub { font-size: 14px; color: var(--muted); margin-top: 3px; }
+.mt-solo { background: #fff3c4; border-radius: 10px; padding: 8px 10px; font-weight: 700; }
+#mighty-card.mt-waiting { border: 3px solid var(--accent); }
+#mighty-card.mt-waiting .mt-line { font-size: 18px; font-weight: 800; color: var(--accent); }

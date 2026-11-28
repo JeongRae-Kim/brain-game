@@ -35,6 +35,7 @@ export function el(tag, cls, text) {
   if (text != null) e.textContent = text;
   return e;
 }
+const fmtD = v => (v > 0 ? "+" + v : String(v));
 const red = c => c !== "JK" && (c[0] === "H" || c[0] === "D");
 const LENGTHS = [["d3", "3판"], ["d5", "5판"], ["d10", "10판"], ["m20", "20분"], ["m30", "30분"], ["m60", "60분"]];
 export const lengthOf = k => (k[0] === "d" ? { deals: Number(k.slice(1)) } : { minutes: Number(k.slice(1)) });
@@ -139,6 +140,7 @@ export function openMightyPractice({ view, myName, toast, onExit, onMatchEnd }) 
   const state = { len: store.get("bg-mighty-len") || "d5", opts: loadOpts() };
   const setup = el("div", "card");
   setup.appendChild(el("h2", null, "🃏 마이티 연습 (나 + 컴퓨터 4명)"));
+  setup.appendChild(el("p", "mt-solo", "혼자 하는 연습판이에요. 다른 사람과 함께 하려면 대기실의 '탁자 (함께 하기)'로 가세요."));
   setup.appendChild(optionsBox(state, { onChange: () => { saveOpts(state.opts); store.set("bg-mighty-len", state.len); } }));
   const go = el("button", "btn primary", "시작");
   setup.appendChild(go);
@@ -322,12 +324,31 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
       row.appendChild(w);
     }
     d.appendChild(row);
+    if (st.contract && (st.phase === "play" || (showTrick && st.phase === "dealEnd"))) d.appendChild(tally(!!showTrick));
     if (showTrick && !multi && st.opts?.manualNext && st.phase === "play") {
       const nx = el("button", "btn primary mt-next", "다음 ▶");
       nx.addEventListener("click", () => { showTrick = null; render(); onIdle?.(); });
       d.appendChild(nx);
     }
     return d;
+  }
+
+  // 주공 편 / 상대 편 그림 카드(점수 카드) 현황
+  function tally(big) {
+    const st = getState();
+    const dcl = st.contract.declarer, f = st.friend, n = st.contract.n;
+    const fKnown = f && f.revealed && f.idx != null;
+    const gov = st.taken[dcl].length + (fKnown ? st.taken[f.idx].length : 0);
+    const all = st.taken.reduce((a, t) => a + t.length, 0);
+    const opp = all - gov;
+    const box = el("div", "mt-tally" + (big ? " big" : ""));
+    const line = el("div", "tl-line");
+    line.append(el("span", "tl-gov", `주공 편 ${gov}장`), el("span", "tl-vs", " · "), el("span", "tl-opp", `상대 편 ${opp}장`));
+    box.appendChild(line);
+    const left = n - gov;
+    box.appendChild(el("div", "tl-sub", left > 0 ? `공약 ${n}장까지 ${left}장 남음` : `공약 ${n}장 달성! (+${gov - n}장)`));
+    if (f && f.type !== "none" && !fKnown) box.appendChild(el("div", "tl-note", "프렌드가 아직 안 밝혀져서 프렌드가 먹은 카드는 상대 편에 섞여 있어요"));
+    return box;
   }
 
   function sortHand(h) {
@@ -502,14 +523,30 @@ export function runTable({ view, getState, me, submit, toast, multi, onIdle, onE
     const st = getState();
     const r = st.dealResult;
     box.appendChild(el("h3", null, r.win ? "🎉 주공 편 승리!" : "🛡️ 야당 승리!"));
-    box.appendChild(el("p", "note", `${st.players[r.declarer].name} ${M.bidText(r.contract)} · 주공 편 ${r.got}장`
-      + (r.friend != null ? ` · 프렌드 ${st.players[r.friend].name}` : " · 프렌드 없음")));
+    const n = r.contract.n, all = st.taken.reduce((a, t) => a + t.length, 0), opp = all - r.got;
+    const diff = r.got - n;
+    const sum = el("div", "mt-settle");
+    sum.appendChild(el("div", "st-main", `공약 ${M.bidText(r.contract)} → 주공 편 ${r.got}장 `
+      + (diff >= 0 ? `(${diff ? diff + "장 넘김" : "딱 맞춤"})` : `(${-diff}장 부족)`) + ` · 상대 편 ${opp}장`));
+    sum.appendChild(el("div", "st-sub", `주공 ${st.players[r.declarer].name}`
+      + (r.friend != null ? ` · 프렌드 ${st.players[r.friend].name}` : " · 프렌드 없음")
+      + (all < 20 ? ` · 버린 카드 속 점수 ${20 - all}장` : "")));
+    const mult = (r.contract.suit === "N" ? 2 : 1) * (r.friend == null ? 2 : 1);
+    const base = r.V / mult;
+    const formula = r.win ? `(${r.got}−${n}) + (${n}−13)×2 + 1 = ${base}` : `−(${n}−${r.got}) = ${base}`;
+    sum.appendChild(el("div", "st-sub", `기본 점수 ${formula}` + (mult > 1 ? ` × ${mult}` + (r.contract.suit === "N" ? " (노기루다" : " (") + (r.friend == null ? (r.contract.suit === "N" ? "·노프렌드)" : "노프렌드)") : ")") + ` = ${r.V}` : "")));
+    const roles = r.friend != null
+      ? `주공 ×2 = ${fmtD(2 * r.V)} · 프렌드 ×1 = ${fmtD(r.V)} · 상대 편 각 ${fmtD(-r.V)}`
+      : `주공 ×4 = ${fmtD(4 * r.V)} · 상대 편 각 ${fmtD(-r.V)}`;
+    sum.appendChild(el("div", "st-sub", roles));
+    box.appendChild(sum);
     const ol = el("ol", "board");
     st.players.map((pl, i) => ({ pl, i })).sort((a, b) => st.scores[b.i] - st.scores[a.i]).forEach(({ pl, i }) => {
       const li = el("li", i === me ? "me" : "");
       const who = el("span", "who", pl.name);
       if (st.opts?.dealEndCards) who.appendChild(el("small", "taken-line", st.taken[i].length ? st.taken[i].map(M.cardText).join(" ") : "먹은 점수 카드 없음"));
-      li.append(who, el("span", "time", `${r.delta[i] >= 0 ? "+" : ""}${r.delta[i]} → ${st.scores[i]}`));
+      const prev = st.scores[i] - r.delta[i];
+      li.append(who, el("span", "time", `${prev} ${r.delta[i] >= 0 ? "+" : "−"} ${Math.abs(r.delta[i])} = ${st.scores[i]}`));
       ol.appendChild(li);
     });
     box.appendChild(ol);

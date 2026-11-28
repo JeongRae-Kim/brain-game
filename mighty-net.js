@@ -51,9 +51,12 @@ export function setupMightyNet(deps) {
     if (!card) return;
     const line = card.querySelector(".mt-line");
     const n = seats.filter(Boolean).length;
+    const waiting = !(st && st.phase !== "matchEnd") && n > 0;
     line.textContent = st && st.phase !== "matchEnd"
       ? `진행 중 · ${st.dealNo}판째 · ${st.players.filter(p => !p.ai).map(p => p.name).join(", ")}`
-      : `자리 ${n}/5 · ${n ? seats.filter(Boolean).map(nameOf).join(", ") : "아직 아무도 안 앉았어요"}`;
+      : waiting ? `🙋 ${seats.filter(Boolean).map(nameOf).join(", ")}님이 탁자에서 기다려요 · 자리 ${n}/5`
+      : "아직 아무도 안 앉았어요 · 함께 하려면 '탁자'를 누르세요";
+    card.classList.toggle("mt-waiting", waiting);
   }
   card?.querySelector(".mt-open")?.addEventListener("click", open);
 
